@@ -1,5 +1,6 @@
 pub mod contract;
 pub mod multisig;
+pub mod native_coin;
 pub mod transfer;
 
 // to build instruction
