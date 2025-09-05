@@ -133,6 +133,7 @@ impl SolanaChain {
         Ok(SolFeeSetting::new(res.value, 0))
     }
 
+    // 执行交易
     pub async fn exec_transaction<T>(
         &self,
         params: T,
@@ -179,6 +180,7 @@ impl SolanaChain {
         Ok(res)
     }
 
+    // 模拟手续费
     pub async fn estimate_fee_v1<T>(
         &self,
         instructions: &[Instruction],
@@ -206,6 +208,7 @@ impl SolanaChain {
         Ok(sol_fee)
     }
 
+    // 多签相关的
     pub async fn sign_with_res<T>(
         &self,
         instructions: Vec<Instruction>,
