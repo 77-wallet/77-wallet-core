@@ -46,10 +46,13 @@ impl ReqBuilder {
                         // 尝试提出error
                         let message = match serde_json::Value::from_str(&response) {
                             Ok(value) => {
-                                let e = value.get("error");
-                                e.map(|e| e.to_string())
+                                if let Some(e) = value.get("error") {
+                                    Some(e.to_string())
+                                } else {
+                                    Some(format!("response no error :{}", response))
+                                }
                             }
-                            Err(_) => None,
+                            Err(_) => Some(format!("all response:{}", response)),
                         };
                         return Err(TransportError::NodeResponseError(NodeResponseError::new(
                             status.as_u16() as i64,
@@ -60,7 +63,7 @@ impl ReqBuilder {
                 Err(e) => {
                     return Err(TransportError::NodeResponseError(NodeResponseError::new(
                         status.as_u16() as i64,
-                        Some(e.to_string()),
+                        Some(format!("res to test err:{}", e)),
                     )));
                 }
             }
