@@ -1,4 +1,4 @@
-use crate::sol::{Provider, consts::SOL_VALUE, operations::contract::TOKEN_PRAMS_ID};
+use crate::sol::{Provider, operations::contract::TOKEN_PRAMS_ID};
 use alloy::primitives::U256;
 use async_trait::async_trait;
 use solana_sdk::program_pack::Pack as _;
@@ -62,7 +62,7 @@ impl super::SolInstructionOperation for Deposit<'_> {
         instruction.push(solana_sdk::system_instruction::transfer(
             &self.from,
             &account_address,
-            self.amount * SOL_VALUE,
+            self.amount,
         ));
 
         // sync native 指令
