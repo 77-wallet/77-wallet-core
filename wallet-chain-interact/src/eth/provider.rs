@@ -94,10 +94,17 @@ impl Provider {
         &self,
         tx: TransactionRequest,
         key: &str,
+        nonce: Option<u64>,
     ) -> crate::Result<String> {
-        let nonce = self.nonce(&tx.from.unwrap().to_string()).await?;
+        let mut n: u64 = 0;
+        if nonce.is_none() {
+            n = self.nonce(&tx.from.unwrap().to_string()).await?;
+        } else {
+            n = nonce.unwrap();
+        }
+
         let chain_id = self.chain_id().await?;
-        let tx = tx.with_nonce(nonce).with_chain_id(chain_id);
+        let tx = tx.with_nonce(n).with_chain_id(chain_id);
 
         // 签名交易
         let signer: alloy::signers::local::PrivateKeySigner = key
