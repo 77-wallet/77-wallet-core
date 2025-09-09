@@ -3,6 +3,7 @@ pub mod account;
 pub mod block;
 pub mod contract;
 pub mod transaction;
+pub use solana_sdk::instruction::Instruction;
 
 #[derive(Debug, Deserialize)]
 pub struct Response<T> {
