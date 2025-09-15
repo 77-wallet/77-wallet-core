@@ -98,11 +98,11 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_client_id() -> Result<(), Box<dyn Error>> {
-        let app_id = "bc7f694ee0a9488cada7d9308190fe45";
-        let sn = "frank";
+        let app_id = "app_id";
+        let sn = "sn";
         let device_type = "Android";
         let client_id = format!("{}_{}_{}", app_id, sn, device_type);
-        let key = "ada7d9308190fe45"; // 16字节密钥
+        let key = "your key"; // 16字节密钥
 
         let aes = Aes128EcbCryptor::new(key)?;
 
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_decrypt_with_padding() -> Result<(), Box<dyn Error>> {
-        let key = "abcdef1234567890"; // 16字节密钥
+        let key = "your key"; // 16字节密钥
         let plaintext = "This is a longer plaintext message that is not a multiple of 16 bytes.";
 
         let aes = Aes128EcbCryptor::new(key)?;
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_encrypt_with_invalid_key_length() {
-        let key = "shortkey"; // 无效的密钥长度
+        let key = "your key"; // 无效的密钥长度
         let plaintext = "Hello, AES Encryption!";
 
         let result = Aes128EcbCryptor::new(key).and_then(|aes| aes.encrypt(plaintext));
@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_decrypt_with_invalid_key_length() {
-        let key = "shortkey"; // 无效的密钥长度
+        let key = "your key"; // 无效的密钥长度
         let encrypted = "3ad77bb40d7a3660a89ecaf32466ef97";
 
         let result = Aes128EcbCryptor::new(key).and_then(|aes| aes.decrypt(encrypted));
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_decrypt_with_invalid_hex() {
-        let key = "1234567890abcdef"; // 16字节密钥
+        let key = "your key"; // 16字节密钥
         let encrypted = "invalidhexstring";
 
         let result = Aes128EcbCryptor::new(key).and_then(|aes| aes.decrypt(encrypted));
