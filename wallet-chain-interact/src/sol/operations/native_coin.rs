@@ -154,3 +154,25 @@ impl super::SolTransferOperation for Withdraw<'_> {
         Ok(None)
     }
 }
+
+pub struct Swap {
+    pub payer: solana_sdk::pubkey::Pubkey,
+}
+impl Swap {
+    pub fn new(payer: &str) -> crate::Result<Self> {
+        Ok(Self {
+            payer: wallet_utils::address::parse_sol_address(payer)?,
+        })
+    }
+}
+
+#[async_trait]
+impl super::SolTransferOperation for Swap {
+    fn payer(&self) -> crate::Result<solana_sdk::pubkey::Pubkey> {
+        Ok(self.payer)
+    }
+
+    async fn extra_fee(&self) -> crate::Result<Option<u64>> {
+        Ok(None)
+    }
+}

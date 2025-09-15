@@ -6,7 +6,10 @@ use super::{
 };
 use crate::{
     BillResourceConsume, QueryTransactionResult,
-    sol::consts,
+    sol::{
+        consts,
+        protocol::{Response, transaction::SimValue},
+    },
     types::{ChainPrivateKey, MultisigSignResp},
 };
 use alloy::primitives::U256;
@@ -240,5 +243,68 @@ impl SolanaChain {
             res,
             tx.signatures[0].to_string(),
         ))
+    }
+
+    pub async fn similar_transaction(
+        &self,
+        payer: &solana_sdk::pubkey::Pubkey,
+        instructions: &[Instruction],
+        alts: Option<Vec<String>>,
+    ) -> crate::Result<Response<SimValue>> {
+        if let Some(alts) = alts {
+            let accounts = self.provider.get_multiple_accounts(&alts).await?;
+
+            let alts = self.provider.account_to_address_table(alts, accounts)?;
+
+            self.provider
+                .simulate_v0_transaction(instructions, payer, alts)
+                .await
+        } else {
+            self.provider
+                .simulate_transaction(instructions, payer)
+                .await
+        }
+    }
+
+    pub async fn exec_v0_transaction<T>(
+        &self,
+        params: T,
+        key: ChainPrivateKey,
+        fee_setting: Option<SolFeeSetting>,
+        mut instructions: Vec<Instruction>,
+        alts: Vec<String>,
+    ) -> crate::Result<String>
+    where
+        T: operations::SolTransferOperation,
+    {
+        let s = solana_sdk::signature::Keypair::from_base58_string(&key);
+        let payer = params.payer()?;
+
+        let other = params.other_keypair();
+        let mut keypair = vec![];
+        if !other.is_empty() {
+            keypair.extend(&other);
+        }
+        keypair.push(&s);
+
+        // add fee instruction
+        if let Some(fee) = fee_setting {
+            if let Some(priority) = fee.priority_fee_per_compute_unit {
+                let unit_price =
+                    compute_budget::ComputeBudgetInstruction::set_compute_unit_price(priority);
+                let unit_limit = compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(
+                    fee.compute_units_consumed as u32,
+                );
+                instructions.splice(0..0, vec![unit_limit, unit_price]);
+            }
+        }
+
+        let accounts = self.provider.get_multiple_accounts(&alts).await?;
+
+        let alts = self.provider.account_to_address_table(alts, accounts)?;
+
+        self.provider
+            .execute_v0_transaction(instructions, alts, &payer, &keypair)
+            .await
     }
 }
