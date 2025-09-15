@@ -8,7 +8,7 @@ mod base;
 fn get_chain() -> EthChain {
     init_test_log();
     // alchemy eth sep 测试网络
-    let rpc = "https://eth-sepolia.g.alchemy.com/v2/I6EHAmjDJfTGik1rvtt6TRTGwARrBFtg";
+    let rpc = "";
 
     let header = None;
     let client = RpcClient::new(&rpc, header).unwrap();
