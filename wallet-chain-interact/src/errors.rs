@@ -52,6 +52,18 @@ pub enum ContractValidationError {
     Other(String),
 }
 
+#[derive(Error, Debug)]
+pub enum SolError {
+    #[error("instruction compile error: {0}")]
+    InstructionCompile(#[from] solana_program::message::CompileError),
+    #[error("{0}")]
+    SignError(String),
+    #[error("{0}")]
+    AccountNotFound(String),
+    #[error("{0}")]
+    AddressLookupTable(String),
+}
+
 impl<'de> serde::Deserialize<'de> for ContractValidationError {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -115,6 +127,8 @@ pub enum Error {
     TonError(#[from] TonError),
     #[error("sui error {0}")]
     SuiError(#[from] crate::sui::error::SuiError),
+    #[error("{0}")]
+    SolError(#[from] SolError),
 
     // flow to optimize
     #[error("hex error {0}")]
