@@ -9,7 +9,7 @@ mod multisig;
 fn get_chain() -> EthChain {
     init_test_log();
 
-    let rpc = "https://go.getblock.io/d51b9998c91b42c281a5da0eea5567a0";
+    let rpc = "";
 
     let header = None;
     let client = RpcClient::new(&rpc, header).unwrap();

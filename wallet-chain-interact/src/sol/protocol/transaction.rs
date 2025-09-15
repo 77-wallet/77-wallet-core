@@ -1,6 +1,7 @@
 use crate::sol::operations::multisig::sods4_v4_has_create_account;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Debug)]
 pub enum CommitmentConfig {
     Processed,
     Confirmed,
@@ -192,4 +193,55 @@ pub struct SignatureStatus {
     pub confirmations: Option<i64>,
     pub confirmation_status: String,
     pub status: Status,
+}
+
+// 模拟交易的配置
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SimulateTransactionConfig {
+    pub commitment: CommitmentConfig,
+    pub encoding: String,
+    pub replace_recent_blockhash: bool,
+    pub sig_verify: bool,
+    pub min_context_slot: Option<u64>,
+    pub inner_instructions: bool,
+    pub accounts: Option<AccountObject>,
+}
+impl Default for SimulateTransactionConfig {
+    fn default() -> Self {
+        Self {
+            commitment: CommitmentConfig::Finalized,
+            encoding: "base64".to_string(),
+            replace_recent_blockhash: true,
+            sig_verify: false,
+            min_context_slot: None,
+            inner_instructions: false,
+            accounts: None,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AccountObject {
+    pub addresses: Vec<String>,
+    pub encoding: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SimValue {
+    pub accounts: Option<serde_json::Value>,
+    pub err: Option<serde_json::Value>,
+    pub inner_instructions: Option<serde_json::Value>,
+    pub loaded_accounts_data_size: u64,
+    pub logs: Vec<String>,
+    pub replacement_blockhash: Option<String>,
+    pub return_data: Option<ReturnData>,
+    pub units_consumed: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReturnData {
+    pub data: Vec<String>,
+    pub program_id: String,
 }
