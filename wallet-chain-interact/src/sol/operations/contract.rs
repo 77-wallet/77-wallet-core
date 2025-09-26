@@ -1,3 +1,8 @@
+use crate::sol::{
+    Provider,
+    operations::{SolInstructionOperation, SolTransferOperation},
+};
+use solana_sdk::{bpf_loader_upgradeable, signature::Keypair};
 use spl_associated_token_account::{
     get_associated_token_address, instruction::create_associated_token_account,
 };
@@ -73,5 +78,61 @@ impl<'a> TokenTransferBuild<'a> {
             &self.mint_pubkey,
             &self.program_id,
         )
+    }
+}
+
+pub struct UpdateAuth<'a> {
+    pub current_authority: solana_sdk::pubkey::Pubkey,
+    pub new_authority: solana_sdk::pubkey::Pubkey,
+    pub program_address: solana_sdk::pubkey::Pubkey,
+    pub new_auth_key: String,
+    pub provider: &'a Provider,
+}
+
+impl<'a> UpdateAuth<'a> {
+    pub fn new(
+        current_authority: &str,
+        new_authority: &str,
+        program_address: &str,
+        keypair: &str,
+        provider: &'a Provider,
+    ) -> crate::Result<Self> {
+        Ok(Self {
+            current_authority: wallet_utils::address::parse_sol_address(current_authority)?,
+            new_authority: wallet_utils::address::parse_sol_address(new_authority)?,
+            program_address: wallet_utils::address::parse_sol_address(program_address)?,
+            new_auth_key: keypair.to_string(),
+            provider,
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl SolInstructionOperation for UpdateAuth<'_> {
+    async fn instructions(
+        &self,
+    ) -> Result<Vec<solana_sdk::instruction::Instruction>, crate::Error> {
+        let instructions = bpf_loader_upgradeable::set_upgrade_authority_checked(
+            &self.program_address,
+            &self.current_authority,
+            &self.new_authority,
+        );
+
+        Ok(vec![instructions])
+    }
+}
+
+#[async_trait::async_trait]
+impl SolTransferOperation for UpdateAuth<'_> {
+    fn other_keypair(&self) -> Vec<solana_sdk::signature::Keypair> {
+        vec![Keypair::from_base58_string(&self.new_auth_key)]
+    }
+
+    fn payer(&self) -> crate::Result<solana_sdk::pubkey::Pubkey> {
+        Ok(self.current_authority)
+    }
+
+    async fn extra_fee(&self) -> crate::Result<Option<u64>> {
+        Ok(None)
     }
 }
