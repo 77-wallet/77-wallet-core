@@ -10,12 +10,17 @@ use super::{
 use crate::sol::protocol::{
     Response,
     block::{Block, BlockHash},
-    transaction::{SignatureStatus, TransactionResponse},
+    transaction::{SignatureStatus, SimValue, SimulateTransactionConfig, TransactionResponse},
 };
 use serde_json::json;
 use solana_sdk::{
-    hash::Hash, instruction::Instruction, pubkey::Pubkey, signature::Keypair,
-    transaction::Transaction,
+    address_lookup_table::{AddressLookupTableAccount, state::AddressLookupTable},
+    hash::Hash,
+    instruction::Instruction,
+    message::{Message, VersionedMessage},
+    pubkey::Pubkey,
+    signature::{Keypair, Signature},
+    transaction::{Transaction, VersionedTransaction},
 };
 use std::{str::FromStr, time::Duration};
 use tokio::time::sleep;
@@ -198,6 +203,57 @@ impl Provider {
         self.send_transaction(&raw_tx, true).await
     }
 
+    // 执行v0的交易,
+    pub async fn execute_v0_transaction(
+        &self,
+        instructions: Vec<Instruction>,
+        alts: Vec<AddressLookupTableAccount>,
+        payer: &Pubkey,
+        keypair: &[&Keypair],
+    ) -> crate::Result<String> {
+        let raw_tx = self
+            .build_vo_transaction(&instructions, alts, payer, Some(keypair))
+            .await?;
+
+        self.send_bs64_tx(&raw_tx).await
+    }
+
+    async fn build_vo_transaction(
+        &self,
+        instructions: &[Instruction],
+        alts: Vec<AddressLookupTableAccount>,
+        payer: &Pubkey,
+        keypairs: Option<&[&Keypair]>,
+    ) -> crate::Result<String> {
+        let recent_blockhash = self.latest_blockhash(CommitmentConfig::Finalized).await?;
+
+        let message = solana_program::message::v0::Message::try_compile(
+            payer,
+            instructions,
+            &alts,
+            recent_blockhash,
+        )
+        .map_err(crate::SolError::InstructionCompile)?;
+
+        let message = VersionedMessage::V0(message);
+
+        let tx = if let Some(keypairs) = keypairs {
+            VersionedTransaction::try_new(message, keypairs).map_err(|e| {
+                crate::SolError::SignError(format!("failed to sign transaction {e}"))
+            })?
+        } else {
+            let signature = vec![Signature::default()];
+            VersionedTransaction {
+                signatures: signature,
+                message,
+            }
+        };
+
+        let raw_tx = wallet_utils::bytes_to_base64(&wallet_utils::hex_func::bin_encode_bytes(&tx)?);
+
+        Ok(raw_tx)
+    }
+
     // 发送 and 等待确认交易
     pub async fn send_and_confirm_transaction(
         &self,
@@ -220,7 +276,7 @@ impl Provider {
 
             let tx_hash = self.send_transaction(&raw_tx, false).await?;
 
-            // query reuslt
+            // query result
             for _ in 0..get_status_time {
                 sleep(Duration::from_millis(500)).await;
 
@@ -271,7 +327,7 @@ impl Provider {
         }
 
         Err(crate::Error::TransferError(format!(
-            "failed to tranfer and retry {}",
+            "failed to transfer and retry {}",
             retries
         )))
     }
@@ -304,6 +360,22 @@ impl Provider {
                 })
             ])
         };
+
+        let params = JsonRpcParams::default()
+            .method("sendTransaction")
+            .params(req);
+
+        Ok(self.client.invoke_request::<_, String>(params).await?)
+    }
+
+    // 发送base64编码的消息
+    pub async fn send_bs64_tx(&self, tx: &str) -> crate::Result<String> {
+        let req = json!([
+            tx,
+            json!({
+                "encoding": "base64",
+            })
+        ]);
 
         let params = JsonRpcParams::default()
             .method("sendTransaction")
@@ -351,24 +423,50 @@ impl Provider {
             .await?)
     }
 
-    pub async fn _simulate_transaction(
+    // Not test
+    pub async fn simulate_transaction(
         &self,
-        instructions: Vec<Instruction>,
+        instructions: &[Instruction],
         payer: &Pubkey,
-        keypair: &[&Keypair],
-    ) -> crate::Result<String> {
-        let block_hash = self.latest_blockhash(CommitmentConfig::Finalized).await?;
+    ) -> crate::Result<Response<SimValue>> {
+        let blockhash = self.latest_blockhash(CommitmentConfig::Processed).await?;
 
-        let tx =
-            Transaction::new_signed_with_payer(&instructions, Some(payer), keypair, block_hash);
-        let raw_tx =
-            solana_sdk::bs58::encode(wallet_utils::hex_func::bin_encode_bytes(&tx)?).into_string();
+        let message = Message::new_with_blockhash(instructions, Some(payer), &blockhash);
+
+        let tx = Transaction::new_unsigned(message);
+        let config = SimulateTransactionConfig::default();
+
+        let raw_tx = wallet_utils::bytes_to_base64(&wallet_utils::hex_func::bin_encode_bytes(&tx)?);
+        let params = JsonRpcParams::default()
+            .method("simulateTransaction")
+            .params(vec![json!(raw_tx), json!(config)]);
+
+        Ok(self
+            .client
+            .invoke_request::<_, Response<SimValue>>(params)
+            .await?)
+    }
+
+    pub async fn simulate_v0_transaction(
+        &self,
+        instructions: &[Instruction],
+        payer: &Pubkey,
+        alts: Vec<AddressLookupTableAccount>,
+    ) -> crate::Result<Response<SimValue>> {
+        let raw_tx = self
+            .build_vo_transaction(instructions, alts, payer, None)
+            .await?;
+
+        let config = SimulateTransactionConfig::default();
 
         let params = JsonRpcParams::default()
             .method("simulateTransaction")
-            .params(vec![raw_tx]);
+            .params(vec![json!(raw_tx), json!(config)]);
 
-        Ok(self.client.invoke_request::<_, String>(params).await?)
+        Ok(self
+            .client
+            .invoke_request::<_, Response<SimValue>>(params)
+            .await?)
     }
 
     pub async fn message_fee(&self, message: &str) -> crate::Result<Response<u64>> {
@@ -465,5 +563,59 @@ impl Provider {
             .params(vec![data_len]);
 
         Ok(self.client.invoke_request(params).await?)
+    }
+
+    // 获取多个账号数据
+    pub async fn get_multiple_accounts(
+        &self,
+        addrs: &[String],
+    ) -> crate::Result<Vec<Option<AccountInfo>>> {
+        let params = JsonRpcParams::default()
+            .method("getMultipleAccounts")
+            .params(vec![addrs]);
+
+        let result = self
+            .client
+            .invoke_request::<_, Response<Vec<Option<AccountInfo>>>>(params)
+            .await?;
+
+        Ok(result.value)
+    }
+
+    // 账号转换为地址表
+    pub fn account_to_address_table(
+        &self,
+        alts: Vec<String>,
+        accounts: Vec<Option<AccountInfo>>,
+    ) -> crate::Result<Vec<AddressLookupTableAccount>> {
+        let mut result = vec![];
+
+        for (pk, acct_opt) in alts.iter().zip(accounts.into_iter()) {
+            let acct = match acct_opt {
+                Some(a) => a,
+                None => {
+                    return Err(crate::SolError::AccountNotFound(format!(
+                        "ALT {} not found (null from getMultipleAccounts)",
+                        pk
+                    )))?;
+                }
+            };
+
+            let b64 = acct.data.get(0).ok_or_else(|| {
+                crate::SolError::AccountNotFound(format!("account {} missing data[0]", pk))
+            })?;
+
+            let raw = wallet_utils::base64_to_bytes(b64)?;
+            let table = AddressLookupTable::deserialize(&raw).map_err(|e| {
+                crate::SolError::AddressLookupTable(format!("ALT {} deserialize failed: {e:?}", pk))
+            })?;
+
+            result.push(AddressLookupTableAccount {
+                key: wallet_utils::address::parse_sol_address(&pk)?,
+                addresses: table.addresses.to_vec(),
+            });
+        }
+
+        Ok(result)
     }
 }

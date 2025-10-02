@@ -1,6 +1,6 @@
 use super::consts;
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct SolFeeSetting {
     // unit lamports
     pub base_fee: u64,
