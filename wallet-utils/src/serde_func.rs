@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serializer};
 
 pub fn serde_to_string<T: ?Sized + serde::Serialize>(value: &T) -> Result<String, crate::Error> {
     serde_json::to_string(value).map_err(|e| crate::Error::Serde(e.into()))
@@ -166,4 +166,11 @@ pub fn serde_yaml_from_value<'de, T: serde::de::DeserializeOwned>(
 
 pub fn bcs_to_bytes<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, crate::Error> {
     bcs::to_bytes(value).map_err(|e| crate::Error::Serde(e.into()))
+}
+
+pub fn u32_to_string<S>(num: &u32, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&num.to_string())
 }
