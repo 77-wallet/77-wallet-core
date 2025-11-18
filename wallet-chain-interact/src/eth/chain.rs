@@ -154,6 +154,7 @@ impl EthChain {
         params: T,
         fee: super::params::FeeSetting,
         private_key: ChainPrivateKey,
+        nonce: Option<u64>,
     ) -> crate::Result<String>
     where
         T: crate::types::Transaction<TransactionRequest>,
@@ -171,7 +172,7 @@ impl EthChain {
             .await?;
 
         self.provider
-            .send_raw_transaction(transfer_params, &private_key)
+            .send_raw_transaction(transfer_params, &private_key, nonce)
             .await
     }
 }
