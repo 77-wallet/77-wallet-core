@@ -3,5 +3,5 @@ Cargo.lock
 .vscode/
 /wallet-chain-interact/tests
 wallet_data
-wallet-utils/src/.DS_Store
 /.idea
+.DS_Store

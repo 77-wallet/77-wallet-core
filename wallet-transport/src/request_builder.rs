@@ -25,6 +25,8 @@ impl ReqBuilder {
     }
 
     pub async fn do_request(self) -> Result<String, crate::TransportError> {
+        // 在调用send()前获取rpc_url
+        let rpc_url = get_rpc_url(self.0.try_clone());
         let res = self
             .0
             .send()
@@ -40,6 +42,7 @@ impl ReqBuilder {
                     if let Ok(rs) = try_to_paras_json(&response) {
                         return Err(TransportError::NodeResponseError(NodeResponseError::new(
                             rs.0,
+                            &rpc_url,
                             Some(rs.1),
                         )));
                     } else {
@@ -56,6 +59,7 @@ impl ReqBuilder {
                         };
                         return Err(TransportError::NodeResponseError(NodeResponseError::new(
                             status.as_u16() as i64,
+                            &rpc_url,
                             message,
                         )));
                     }
@@ -63,6 +67,7 @@ impl ReqBuilder {
                 Err(e) => {
                     return Err(TransportError::NodeResponseError(NodeResponseError::new(
                         status.as_u16() as i64,
+                        &rpc_url,
                         Some(format!("res to test err:{}", e)),
                     )));
                 }
@@ -85,16 +90,33 @@ impl ReqBuilder {
     }
 }
 
-fn try_to_paras_json(res: &str) -> Result<(i64, String), crate::TransportError> {
-    if let Ok(reg) = regex::Regex::new(r#"\{.*\}"#) {
-        let res = reg.find(res).map(|m| m.as_str().to_string());
-        if let Some(res) = res {
-            let res = res.replace("\\\"", "\"");
-            let response = wallet_utils::serde_func::serde_from_str::<JsonRpcResult>(&res);
+/// 从RequestBuilder获取RPC URL，如果获取失败则返回"unknown"
+fn get_rpc_url(builder: Option<RequestBuilder>) -> String {
+    builder
+        .and_then(|b| b.build().ok().map(|req| req.url().to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
+}
 
-            if let Ok(res) = response {
-                if let Some(res) = res.error {
-                    return Ok((res.code, res.message));
+fn try_to_paras_json(res: &str) -> Result<(i64, String), crate::TransportError> {
+    // 尝试直接解析整个响应为JsonRpcResult
+    match wallet_utils::serde_func::serde_from_str::<JsonRpcResult>(res) {
+        Ok(result) => {
+            if let Some(err) = result.error {
+                return Ok((err.code, err.message));
+            }
+        }
+        Err(_) => {
+            // 如果直接解析失败，尝试使用正则表达式提取JSON部分（针对不标准的响应）
+            if let Ok(reg) = regex::Regex::new(r#"\{.*\}"#) {
+                if let Some(captured) = reg.find(res) {
+                    let json_str = captured.as_str().replace("\\\"", "\"");
+                    if let Ok(result) =
+                        wallet_utils::serde_func::serde_from_str::<JsonRpcResult>(&json_str)
+                    {
+                        if let Some(err) = result.error {
+                            return Ok((err.code, err.message));
+                        }
+                    }
                 }
             }
         }

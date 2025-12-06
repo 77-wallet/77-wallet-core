@@ -33,11 +33,16 @@ impl TransportError {
 #[derive(Debug)]
 pub struct NodeResponseError {
     pub code: i64,
+    pub rpc: String,
     pub message: Option<String>,
 }
 
 impl NodeResponseError {
-    pub fn new(code: i64, message: Option<String>) -> Self {
-        Self { code, message }
+    pub fn new(code: i64, rpc: &str, message: Option<String>) -> Self {
+        Self {
+            code,
+            rpc: rpc.to_string(),
+            message,
+        }
     }
 }
