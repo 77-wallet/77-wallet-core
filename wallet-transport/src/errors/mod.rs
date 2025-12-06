@@ -16,8 +16,8 @@ impl std::fmt::Display for NodeResponseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Node response error: code={}, message={:?}",
-            self.code, self.message
+            "Node response error: code={}, rpc={}, message={:?}",
+            self.code, self.rpc, self.message
         )
     }
 }
