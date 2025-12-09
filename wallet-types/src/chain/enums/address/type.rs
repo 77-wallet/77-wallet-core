@@ -247,9 +247,37 @@ impl TryFrom<Option<String>> for AddressType {
     type Error = crate::Error;
     fn try_from(value: Option<String>) -> Result<Self, Self::Error> {
         match value {
-            Some(v) => BtcAddressType::try_from(v.as_str()).map(AddressType::Btc),
+            Some(v) => AddressType::try_from(v.as_str()),
             None => Ok(AddressType::Other),
         }
+    }
+}
+
+impl TryFrom<&str> for AddressType {
+    type Error = crate::Error;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        // 尝试解析为BtcAddressType
+        if let Ok(btc_type) = BtcAddressType::try_from(value) {
+            return Ok(AddressType::Btc(btc_type));
+        }
+
+        // 尝试解析为LtcAddressType
+        if let Ok(ltc_type) = LtcAddressType::try_from(value) {
+            return Ok(AddressType::Ltc(ltc_type));
+        }
+
+        // 尝试解析为DogAddressType
+        if let Ok(dog_type) = DogAddressType::try_from(value) {
+            return Ok(AddressType::Dog(dog_type));
+        }
+
+        // 尝试解析为TonAddressType
+        if let Ok(ton_type) = TonAddressType::try_from(value) {
+            return Ok(AddressType::Ton(ton_type));
+        }
+
+        // 如果都解析失败，返回MissAddressType错误
+        Err(crate::Error::MissAddressType)
     }
 }
 
@@ -346,5 +374,68 @@ impl TryFrom<&str> for DogAddressType {
             P2TR_SH => DogAddressType::P2trSh,
             other => return Err(crate::Error::DogAddressTypeInvalid(other.to_string())),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_address_type_from_str() {
+        // 测试BTC地址类型
+        assert_eq!(
+            AddressType::try_from("p2pkh").unwrap(),
+            AddressType::Btc(BtcAddressType::P2pkh)
+        );
+        assert_eq!(
+            AddressType::try_from("p2wpkh").unwrap(),
+            AddressType::Btc(BtcAddressType::P2wpkh)
+        );
+        assert_eq!(
+            AddressType::try_from("p2tr").unwrap(),
+            AddressType::Btc(BtcAddressType::P2tr)
+        );
+
+        // 测试LTC地址类型
+        assert_eq!(
+            AddressType::try_from("p2pkh").unwrap(),
+            AddressType::Btc(BtcAddressType::P2pkh)
+        );
+        assert_eq!(
+            AddressType::try_from("p2wpkh").unwrap(),
+            AddressType::Btc(BtcAddressType::P2wpkh)
+        );
+        assert_eq!(
+            AddressType::try_from("p2tr").unwrap(),
+            AddressType::Btc(BtcAddressType::P2tr)
+        );
+
+        // 测试DOG地址类型
+        assert_eq!(
+            AddressType::try_from("p2pkh").unwrap(),
+            AddressType::Btc(BtcAddressType::P2pkh)
+        );
+        assert_eq!(
+            AddressType::try_from("p2wpkh").unwrap(),
+            AddressType::Btc(BtcAddressType::P2wpkh)
+        );
+        assert_eq!(
+            AddressType::try_from("p2tr").unwrap(),
+            AddressType::Btc(BtcAddressType::P2tr)
+        );
+
+        // 测试TON地址类型
+        assert_eq!(
+            AddressType::try_from("v4r2").unwrap(),
+            AddressType::Ton(TonAddressType::V4R2)
+        );
+        assert_eq!(
+            AddressType::try_from("v5r1").unwrap(),
+            AddressType::Ton(TonAddressType::V5R1)
+        );
+
+        // 测试无效地址类型
+        assert!(AddressType::try_from("invalid_type").is_err());
     }
 }
