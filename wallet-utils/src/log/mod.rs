@@ -43,10 +43,10 @@ pub fn get_log_level() -> String {
         .unwrap_or(file::DEFAULT_LOG_LEVEL.to_string())
 }
 
-pub fn init_test_log() {
+pub fn init_test_log(level: tracing::Level) {
     tracing_subscriber::fmt()
         .pretty()
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(level)
         .with_test_writer()
         .init();
 }
