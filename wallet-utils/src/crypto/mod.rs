@@ -79,7 +79,7 @@ mod test {
 
     #[test]
     fn test_sha256() {
-        init_test_log(tracing::Level::INFO);
+        init_test_log();
         let str = "dlalkfja02034-012384019sodfaop[";
         let str = str.as_bytes();
 
@@ -95,7 +95,7 @@ mod test {
 
     #[test]
     fn test_base58_encode() {
-        init_test_log(tracing::Level::INFO);
+        init_test_log();
         let input1 = "Hello";
         let digest1 = md5_vec(input1);
         // let str = str.as_bytes();
