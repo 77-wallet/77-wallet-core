@@ -1,5 +1,11 @@
 use thiserror::Error;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryPolicy {
+    Never,
+    Delay,
+}
+
 #[derive(Error, Debug)]
 pub enum TransportError {
     #[error("node response: {}", .0)]
@@ -28,6 +34,30 @@ impl TransportError {
             _ => false,
         }
     }
+
+    pub fn retry_policy(&self) -> RetryPolicy {
+        match self {
+            TransportError::NodeResponseError(e) => {
+                if e.is_delay_retryable() {
+                    RetryPolicy::Delay
+                } else {
+                    RetryPolicy::Never
+                }
+            }
+
+            TransportError::Utils(e) => {
+                if e.is_network_error() {
+                    RetryPolicy::Delay
+                } else {
+                    RetryPolicy::Never
+                }
+            }
+
+            TransportError::EmptyResult => RetryPolicy::Never,
+
+            TransportError::RumqttcV5Option(_) => RetryPolicy::Never,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -44,5 +74,19 @@ impl NodeResponseError {
             rpc: rpc.to_string(),
             message,
         }
+    }
+
+    pub fn is_delay_retryable(&self) -> bool {
+        matches!(self.code, 502 | 503 | 504) || self.is_html_error()
+    }
+
+    fn is_html_error(&self) -> bool {
+        self.message
+            .as_deref()
+            .map(|m| {
+                let m = m.to_ascii_lowercase();
+                m.contains("<html") || m.contains("<!doctype html")
+            })
+            .unwrap_or(false)
     }
 }
