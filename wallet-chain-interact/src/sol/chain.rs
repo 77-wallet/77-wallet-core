@@ -183,6 +183,42 @@ impl SolanaChain {
         Ok(res)
     }
 
+    pub async fn build_legacy_signed_tx<T>(
+        &self,
+        params: T,
+        key: ChainPrivateKey,
+        fee_setting: Option<SolFeeSetting>,
+        mut instructions: Vec<Instruction>,
+    ) -> crate::Result<(String, String)>
+    where
+        T: operations::SolTransferOperation,
+    {
+        let s = solana_sdk::signature::Keypair::from_base58_string(&key);
+        let payer = params.payer()?;
+
+        let other = params.other_keypair();
+        let mut keypair = vec![];
+        if !other.is_empty() {
+            keypair.extend(&other);
+        }
+        keypair.push(&s);
+
+        // add fee instruction
+        if let Some(fee) = fee_setting {
+            if let Some(priority) = fee.priority_fee_per_compute_unit {
+                let unit_price =
+                    compute_budget::ComputeBudgetInstruction::set_compute_unit_price(priority);
+                let unit_limit = compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(
+                    fee.compute_units_consumed as u32,
+                );
+                instructions.splice(0..0, vec![unit_limit, unit_price]);
+            }
+        }
+        self.provider
+            .build_legacy_signed_tx(instructions, &payer, &keypair)
+            .await
+    }
+
     // 模拟手续费
     pub async fn estimate_fee_v1<T>(
         &self,
