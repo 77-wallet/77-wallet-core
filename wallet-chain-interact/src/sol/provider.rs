@@ -203,6 +203,32 @@ impl Provider {
         self.send_transaction(&raw_tx, true).await
     }
 
+    pub async fn build_legacy_signed_tx(
+        &self,
+        instructions: Vec<Instruction>,
+        payer: &Pubkey,
+        keypair: &[&Keypair],
+    ) -> crate::Result<(String, String)> {
+        let block_hash = self.latest_blockhash(CommitmentConfig::Processed).await?;
+
+        let tx =
+            Transaction::new_signed_with_payer(&instructions, Some(payer), keypair, block_hash);
+
+        // raw_tx(base58)
+        let raw_tx =
+            solana_sdk::bs58::encode(wallet_utils::hex_func::bin_encode_bytes(&tx)?).into_string();
+
+        // hash = Signature
+        let tx_hash = tx.signatures[0].to_string();
+
+        Ok((tx_hash, raw_tx))
+    }
+
+    pub async fn broadcast_legacy(&self, raw_tx: &str) -> crate::Result<String> {
+        let result = self.send_transaction(raw_tx, false).await?;
+        Ok(result)
+    }
+
     // 执行v0的交易,
     pub async fn execute_v0_transaction(
         &self,
