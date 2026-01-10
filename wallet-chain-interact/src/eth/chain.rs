@@ -12,7 +12,7 @@ use wallet_utils::unit;
 pub struct EthChain {
     pub provider: Provider,
     pub chain_code: ChainCode,
-    network: network::NetworkKind,
+    pub network: network::NetworkKind,
 }
 
 impl EthChain {
