@@ -90,6 +90,53 @@ impl Provider {
             .with_max_fee_per_gas(max_fee))
     }
 
+    pub async fn build_signed_raw_transaction(
+        &self,
+        tx: TransactionRequest,
+        key: &str,
+        nonce: Option<u64>,
+    ) -> crate::Result<(Vec<u8>, String)> {
+        // 1. nonce
+        let n = match nonce {
+            Some(n) => n,
+            None => self.nonce(&tx.from.clone().unwrap().to_string()).await?,
+        };
+
+        // 2. chain id
+        let chain_id = self.chain_id().await?;
+        let tx = tx.with_nonce(n).with_chain_id(chain_id);
+
+        // 3. signer
+        let signer: alloy::signers::local::PrivateKeySigner = key
+            .parse()
+            .map_err(|_| crate::Error::SignError("parse key failed".to_string()))?;
+        let wallet = alloy::network::EthereumWallet::from(signer);
+
+        // 4. 签名 envelope
+        let tx_envelope = tx
+            .build(&wallet)
+            .await
+            .map_err(|e| crate::Error::SignError(e.to_string()))?;
+
+        // 5. 编码
+        // 完整签名raw_tx
+        let bytes = tx_envelope.encoded_2718();
+
+        // 无需 decode/encode，直接用包含签名的 envelope 计算 hash
+        let tx_hash = format!("0x{}", hex::encode(tx_envelope.tx_hash().as_slice()));
+
+        Ok((bytes.to_vec(), tx_hash))
+    }
+
+    pub async fn broadcast_raw_transaction(&self, raw: &[u8]) -> crate::Result<String> {
+        let hex_raw = format!("0x{}", hex::encode(raw));
+        let params = JsonRpcParams::default()
+            .method("eth_sendRawTransaction")
+            .params(vec![hex_raw]);
+
+        Ok(self.client.invoke_request::<_, String>(params).await?)
+    }
+
     pub async fn send_raw_transaction(
         &self,
         tx: TransactionRequest,
