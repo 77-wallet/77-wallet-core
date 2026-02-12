@@ -47,7 +47,10 @@ impl LtcChain {
             .await
         {
             Ok(res) => res,
-            Err(_) => return Ok(None),
+            Err(err) => {
+                tracing::error!("query ltc transaction {} error: {:?}", hash, err);
+                return Ok(None);
+            }
         };
 
         if transaction.blockhash.is_empty() {

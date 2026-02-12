@@ -121,7 +121,7 @@ impl Provider {
         // 5. 编码
         // 完整签名raw_tx
         let bytes = tx_envelope.encoded_2718();
-
+        
         // 无需 decode/encode，直接用包含签名的 envelope 计算 hash
         let tx_hash = format!("0x{}", hex::encode(tx_envelope.tx_hash().as_slice()));
 

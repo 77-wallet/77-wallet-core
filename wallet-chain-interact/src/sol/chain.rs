@@ -83,11 +83,14 @@ impl SolanaChain {
         let transaction = self.provider.query_transaction(hash, "finalized").await;
         let transaction = match transaction {
             Ok(transaction) => transaction,
-            Err(_err) => return Ok(None),
+            Err(err) => {
+                tracing::error!("query solana transaction {} error: {:?}", hash, err);
+                return Ok(None);
+            }
         };
         let state: i8 = match transaction.meta.status {
             Status::Ok(_) => 2,  // 成功
-            Status::Err(_) => 3, // 成功
+            Status::Err(_) => 3, // 失败
         };
 
         let crate_account = transaction.meta.may_init_account();

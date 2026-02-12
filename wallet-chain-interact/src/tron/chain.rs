@@ -224,7 +224,10 @@ impl TronChain {
         let transaction = self.provider.query_tx_info(hash).await;
         let transaction = match transaction {
             Ok(transaction) => transaction,
-            Err(_err) => return Ok(None),
+            Err(err) => {
+                tracing::error!("query tron transaction {} error: {:?}", hash, err);
+                return Ok(None);
+            }
         };
 
         // timestamp unit ms to s

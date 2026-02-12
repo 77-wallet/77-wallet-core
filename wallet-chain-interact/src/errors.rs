@@ -162,6 +162,7 @@ impl Error {
         match self {
             Error::TransportError(e) => e.is_network_error(),
             Error::UtilsError(e) => e.is_network_error(),
+            Error::RpcError(e) => e.contains("Transaction expired"),
             _ => false,
         }
     }

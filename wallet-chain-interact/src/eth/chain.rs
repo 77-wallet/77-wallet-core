@@ -89,7 +89,10 @@ impl EthChain {
     pub async fn query_tx_res(&self, hash: &str) -> crate::Result<Option<QueryTransactionResult>> {
         let receipt = match self.provider.transaction_receipt(hash).await {
             Ok(receipt) => receipt,
-            Err(_err) => return Ok(None),
+            Err(err) => {
+                tracing::error!("query eth transaction {} receipt error: {:?}", hash, err);
+                return Ok(None);
+            }
         };
 
         let hash = receipt.block_hash.unwrap_or_default().to_string();
