@@ -1,3 +1,5 @@
+use crate::error::RetryableError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum HttpError {
     GetExtensionFailed,
@@ -47,5 +49,24 @@ impl std::fmt::Display for HttpError {
                 )
             }
         }
+    }
+}
+
+impl RetryableError for HttpError {
+    fn is_network_error(&self) -> bool {
+        true
+    }
+
+    // 使用默认实现
+    // fn is_html_error(&self) -> bool {
+    //     false
+    // }
+
+    fn is_delay_retryable(&self) -> bool {
+        true
+    }
+
+    fn retry_policy(&self) -> crate::error::RetryPolicy {
+        crate::error::RetryPolicy::Delay
     }
 }

@@ -1,3 +1,5 @@
+use wallet_utils::RetryableError;
+
 #[derive(Debug, thiserror::Error, serde::Serialize)]
 pub enum Error {
     #[error("Unknown language")]
@@ -23,4 +25,26 @@ impl From<coins_bip39::MnemonicError> for Error {
         };
         Error::Mnemonic(msg)
     }
+}
+
+impl RetryableError for Error {
+    // 使用默认实现
+    // fn is_network_error(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn is_html_error(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn is_delay_retryable(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn retry_policy(&self) -> RetryPolicy {
+    //     RetryPolicy::Never
+    // }
 }

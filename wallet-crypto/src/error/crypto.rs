@@ -1,4 +1,5 @@
 use thiserror::Error;
+use wallet_utils::RetryableError;
 
 #[derive(Error, Debug)]
 /// An error thrown when interacting with the eth-keystore crate.
@@ -70,4 +71,26 @@ impl From<serde_json::Error> for KeystoreError {
     fn from(e: serde_json::Error) -> KeystoreError {
         KeystoreError::SerdeJson(e.to_string())
     }
+}
+
+impl RetryableError for KeystoreError {
+    // 使用默认实现
+    // fn is_network_error(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn is_html_error(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn is_delay_retryable(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn retry_policy(&self) -> RetryPolicy {
+    //     RetryPolicy::Never
+    // }
 }

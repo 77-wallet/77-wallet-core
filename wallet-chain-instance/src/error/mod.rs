@@ -1,3 +1,5 @@
+use wallet_utils::{RetryPolicy, RetryableError};
+
 pub mod keypair;
 
 #[derive(Debug, thiserror::Error)]
@@ -41,6 +43,32 @@ impl Error {
         match self {
             Error::Utils(e) => e.is_network_error(),
             _ => false,
+        }
+    }
+}
+
+impl RetryableError for Error {
+    fn is_network_error(&self) -> bool {
+        self.is_network_error()
+    }
+
+    fn is_html_error(&self) -> bool {
+        false
+    }
+
+    fn is_delay_retryable(&self) -> bool {
+        match self {
+            Error::Utils(e) => e.is_delay_retryable(),
+            Error::Core(e) => e.is_delay_retryable(),
+            _ => false,
+        }
+    }
+
+    fn retry_policy(&self) -> RetryPolicy {
+        if self.is_delay_retryable() {
+            RetryPolicy::Delay
+        } else {
+            RetryPolicy::Never
         }
     }
 }
