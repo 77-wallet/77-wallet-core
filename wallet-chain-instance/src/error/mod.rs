@@ -10,6 +10,8 @@ pub enum Error {
     LtcAddressTypeCantGenDerivationPath,
     #[error("This dog address type can't generate derivation path")]
     DogAddressTypeCantGenDerivationPath,
+    #[error("Ton address generation is not supported in this context")]
+    TonAddressGenerationUnsupported,
     #[error("Core error: {0}")]
     Core(#[from] wallet_core::Error),
     #[error("Utils error: {0}")]

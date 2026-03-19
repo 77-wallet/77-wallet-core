@@ -16,7 +16,7 @@ impl wallet_core::derive::GenDerivation for SolanaInstance {
         input_index: i32,
     ) -> Result<String, crate::Error> {
         let index = wallet_utils::address::i32_index_to_unhardened_u32(input_index)?;
-        let path = crate::add_solana_index(wallet_types::constant::SOLANA_DERIVATION_PATH, index);
+        let path = crate::add_solana_index(wallet_types::constant::SOLANA_DERIVATION_PATH, index)?;
         Ok(path)
     }
 }

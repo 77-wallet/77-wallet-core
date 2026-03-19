@@ -267,8 +267,8 @@ impl ChainObject {
                 address_type: i.address_type,
                 network: i.network,
             }),
+            ChainObject::Ton(_) => return Err(crate::Error::TonAddressGenerationUnsupported),
             ChainObject::Sui(_) => Box::new(crate::instance::sui::address::SuiGenAddress {}),
-            _ => panic!("not suer used"),
         })
     }
 }
@@ -357,7 +357,7 @@ mod test {
 
     #[test]
     fn test_gen() {
-        let phrase = "";
+        let phrase = "green pizza fix similar sentence digital pear suggest where luggage bomb because";
         let password = "";
 
         let xpriv = xpriv::generate_master_key(1, phrase, password).unwrap();

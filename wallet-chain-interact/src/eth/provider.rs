@@ -143,12 +143,11 @@ impl Provider {
         key: &str,
         nonce: Option<u64>,
     ) -> crate::Result<String> {
-        let mut n: u64 = 0;
-        if nonce.is_none() {
-            n = self.nonce(&tx.from.unwrap().to_string()).await?;
+        let n = if nonce.is_none() {
+            self.nonce(&tx.from.unwrap().to_string()).await?
         } else {
-            n = nonce.unwrap();
-        }
+            nonce.unwrap()
+        };
 
         let chain_id = self.chain_id().await?;
         let tx = tx.with_nonce(n).with_chain_id(chain_id);

@@ -44,31 +44,31 @@ pub fn get_log_level() -> String {
 }
 
 pub fn init_test_log() {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .pretty()
         .with_max_level(tracing::Level::INFO)
         .with_test_writer()
-        .init();
+        .try_init();
 }
 
 pub fn init_log_with_level(level: tracing::Level) {
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .pretty()
         .with_max_level(level)
         .with_test_writer()
-        .init();
+        .try_init();
 }
 
 pub fn init_log() {
     // 初始化日志输出，带有自定义时间格式和事件格式
-    tracing_subscriber::fmt()
+    let _ = tracing_subscriber::fmt()
         .pretty()
         // .with_timer(CustomTime) // 自定义时间格式
         .with_target(true) // 显示日志目标
         .with_level(true) // 显示日志级别
         .event_format(CustomEventFormat) // 使用自定义的事件格式化器 // 通过闭包传递自定义的事件格式化函数
         // .fmt_fields(format::DefaultFields::new()) // 使用默认字段格式化器
-        .init();
+        .try_init();
 }
 
 // struct CustomTime;

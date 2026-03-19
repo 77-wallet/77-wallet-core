@@ -1,4 +1,3 @@
-#![feature(let_chains)]
 pub mod btc;
 pub use btc::script;
 pub mod ltc;

@@ -64,10 +64,10 @@ impl wallet_core::derive::GenDerivation for TonInstance {
     ) -> Result<String, crate::Error> {
         let path = if input_index < 0 {
             let i = wallet_utils::address::i32_index_to_unhardened_u32(input_index)?;
-            crate::add_index(Self::TON_DERIVATION_PATH, i, true)
+            crate::add_index(Self::TON_DERIVATION_PATH, i, true)?
         } else {
             let i = input_index as u32;
-            crate::add_index(Self::TON_DERIVATION_PATH, i, true)
+            crate::add_index(Self::TON_DERIVATION_PATH, i, true)?
         };
         Ok(path)
     }
@@ -90,12 +90,13 @@ impl wallet_core::KeyPair for TonKeyPair {
     where
         Self: Sized,
     {
-        let drive_path = DerivationPath::from_str(derivation_path).unwrap();
+        let drive_path = DerivationPath::from_str(derivation_path)
+            .map_err(|e| crate::Error::PriKey(format!("ton invalid derivation path: {e:?}")))?;
 
         let key = ExtendedSecretKey::from_seed(&seed)
-            .unwrap()
+            .map_err(|e| crate::Error::PriKey(format!("ton invalid seed: {e:?}")))?
             .derive(&drive_path)
-            .unwrap();
+            .map_err(|e| crate::Error::PriKey(format!("ton derive failed: {e:?}")))?;
 
         Ok(Self {
             tron_family: chain_code.to_owned(),
@@ -164,7 +165,7 @@ mod test {
         let path = TonInstance::generate(&None, 0).unwrap();
 
         println!("path: {path}");
-        let path = "m/44'/607'/0";
+        let path = path.as_str();
         let chain_code = ChainCode::Bitcoin;
         let keypair = TonKeyPair::generate_with_derivation(
             xpriv.1,
@@ -173,8 +174,6 @@ mod test {
             wallet_types::chain::network::NetworkKind::Mainnet,
         )
         .unwrap();
-
-        println!("private key {}", keypair.private_key().unwrap());
 
         println!("{}", keypair.address());
 
@@ -202,7 +201,6 @@ mod test {
         )
         .unwrap();
 
-        println!("private key {}", keypair.private_key().unwrap());
         assert_eq!(
             keypair.address(),
             "UQBud2VI5S1IhaPm3OJ7wYUewhBSK7VhfPbnp_0tvvBpx7ze"

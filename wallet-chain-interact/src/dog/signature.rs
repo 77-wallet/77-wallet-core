@@ -185,11 +185,13 @@ impl DogSignature {
                 .taproot_key_spend_signature_hash(i, &prevouts, sighash_type)
                 .map_err(|e| {
                     crate::Error::SignError(format!("p2tr failed to compute sighash{e:}"))
-                })?;
+            })?;
 
             let tweaked: TweakedKeypair = keypair.tap_tweak(&self.secp, None);
             let msg = Message::from(sighash);
-            let signature = self.secp.sign_schnorr(&msg, &tweaked.to_inner());
+            #[allow(deprecated)]
+            let tweaked = tweaked.to_inner();
+            let signature = self.secp.sign_schnorr(&msg, &tweaked);
             let signature = dogcoin::taproot::Signature {
                 signature,
                 sighash_type,
