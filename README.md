@@ -47,6 +47,50 @@ The workspace currently contains code for:
 - Transport abstractions for HTTP and RPC-style communication
 - Shared constants and typed responses for common wallet operations
 
+## How The Pieces Fit
+
+The workspace is layered roughly like this:
+
+`wallet-utils` -> `wallet-types` -> `wallet-core` / `wallet-crypto` ->
+`wallet-chain-instance` -> `wallet-chain-interact` -> `wallet-transport`
+
+In practice:
+
+- `wallet-types` carries shared chain enums, address types, and constants.
+- `wallet-core` turns mnemonic material into seeds, derivation paths, and
+  keypair traits.
+- `wallet-crypto` handles keystore and encrypted JSON workflows.
+- `wallet-chain-instance` binds a chain code plus address type to the correct
+  derivation and address generator.
+- `wallet-chain-interact` builds chain-specific providers, transactions, and
+  signing flows.
+- `wallet-transport` provides the HTTP and RPC clients those chain modules use.
+
+## Minimal Example
+
+This is the general shape of a derivation flow in the workspace:
+
+```rust
+use wallet_core::xpriv;
+use wallet_chain_instance::instance::ChainObject;
+use wallet_types::chain::network::NetworkKind;
+
+fn derive_address() -> Result<String, Box<dyn std::error::Error>> {
+    let phrase = "your twelve or twenty four word mnemonic here";
+    let password = "";
+
+    let (_root, seed) = xpriv::generate_master_key(1, phrase, password)?;
+    let chain = ChainObject::new("eth", None, NetworkKind::Mainnet)?;
+    let keypair = chain.gen_keypair_with_index_address_type(&seed, 0)?;
+
+    Ok(keypair.address())
+}
+```
+
+For chain-specific network work, the interaction layer follows the same
+pattern: create a provider, fetch the on-chain data you need, then build or
+sign the transaction with the chain-specific helper.
+
 ## Current Caveats
 
 - The workspace uses nightly-only language features in some crates.
@@ -55,6 +99,8 @@ The workspace currently contains code for:
 - There is no single end-user binary yet; this is a library workspace.
 - Several chain integrations depend on third-party RPC / SDK crates and may
   need environment-specific configuration.
+- The APIs are not yet frozen, so treat examples as a guide to current usage
+  rather than a compatibility promise.
 
 ## Getting Started
 
@@ -72,11 +118,15 @@ cargo +nightly test -p wallet-utils
 cargo +nightly test -p wallet-chain-interact
 ```
 
+If you are only checking the docs refresh, there is no extra build step beyond
+reviewing the Markdown files.
+
 ## Documentation
 
 - `docs/codex/testing.md`: how to choose and scope tests
 - `docs/codex/checklists/pr-definition-of-done.md`: PR acceptance checklist
 - `docs/codex/commit-message.md`: commit message format and scopes
+- `docs/architecture.md`: repository layering and data flow
 
 If you are working with Codex inside this repository, read `AGENTS.md` first so
 the repo-specific boundaries stay aligned with the current workspace.
