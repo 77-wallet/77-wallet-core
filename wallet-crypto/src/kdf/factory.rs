@@ -5,9 +5,10 @@ use crate::{
     kdf::{
         KdfParams, KeyDerivationFunction,
         argon2id::Argon2idKdf,
-        pbkdf2::Pbkdf2Kdf,
+        pbkdf2::{Pbkdf2Kdf, Pbkdf2Params},
         scrypt_::{ScryptKdf, ScryptParams},
     },
+    utils::HexBytes,
 };
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -32,7 +33,13 @@ impl KdfFactory {
                 Ok(Box::new(ScryptKdf::new(params)))
             }
             KdfAlgorithm::Pbkdf2 => {
-                todo!()
+                let params = Pbkdf2Params {
+                    c: 262_144,
+                    dklen: 32,
+                    prf: "hmac-sha256".to_string(),
+                    salt: HexBytes(salt.to_vec()),
+                };
+                Ok(Box::new(Pbkdf2Kdf::new(params)))
             }
             KdfAlgorithm::Argon2id => {
                 let params = Argon2idKdf::recommended_params_with_salt(salt);
@@ -51,5 +58,27 @@ impl KdfFactory {
         };
 
         Ok(kdf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kdf_factory_pbkdf2() {
+        let salt = b"0123456789abcdef";
+        let kdf = KdfFactory::create(&KdfAlgorithm::Pbkdf2, salt).unwrap();
+
+        assert_eq!(kdf.algorithm(), KdfAlgorithm::Pbkdf2);
+        assert_eq!(kdf.params(), KdfParams::Pbkdf2(Pbkdf2Params {
+            c: 262_144,
+            dklen: 32,
+            prf: "hmac-sha256".to_string(),
+            salt: HexBytes(salt.to_vec()),
+        }));
+
+        let derived = kdf.derive_key(b"password").unwrap();
+        assert_eq!(derived.len(), 32);
     }
 }

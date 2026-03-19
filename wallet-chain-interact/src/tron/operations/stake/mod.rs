@@ -13,7 +13,7 @@ pub use unfreeze::*;
 pub mod vote;
 pub use vote::*;
 
-#[derive(serde::Serialize, Debug, serde::Deserialize, Clone, Copy)]
+#[derive(serde::Serialize, Debug, serde::Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceType {
     ENERGY,
     BANDWIDTH,
@@ -42,7 +42,22 @@ impl TryFrom<&str> for ResourceType {
         match value.to_lowercase().as_ref() {
             "energy" => Ok(ResourceType::ENERGY),
             "bandwidth" => Ok(ResourceType::BANDWIDTH),
-            _ => panic!("invalid resource type {:?}", value),
+            _ => Err(crate::Error::InvalidResourceType(value.to_string())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResourceType;
+
+    #[test]
+    fn test_invalid_resource_type() {
+        assert!(ResourceType::try_from("invalid").is_err());
+        assert_eq!(ResourceType::try_from("energy").unwrap(), ResourceType::ENERGY);
+        assert_eq!(
+            ResourceType::try_from("bandwidth").unwrap(),
+            ResourceType::BANDWIDTH
+        );
     }
 }

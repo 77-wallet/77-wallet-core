@@ -4,6 +4,8 @@ pub enum Error {
     HdPath,
     #[error("Unknown chain code")]
     UnknownChainCode,
+    #[error("Invalid network kind: {0}")]
+    InvalidNetworkKind(String),
     #[error("Unknown coin type: {0}")]
     UnknownCoinType(u32),
     #[error("Btc need address type")]

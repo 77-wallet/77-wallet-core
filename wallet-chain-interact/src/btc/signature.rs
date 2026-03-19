@@ -166,7 +166,9 @@ impl BtcSignature {
             BtcAddressType::P2sh => self.p2sh(&tx, script),
             BtcAddressType::P2wsh | BtcAddressType::P2shWsh => self.p2wsh(&tx, script),
             BtcAddressType::P2trSh => self.p2tr_sh(&tx, script, provider).await,
-            _ => panic!("sign not support multisig address"),
+            _ => Err(crate::Error::SignError(format!(
+                "sign not support multisig address {address_type:?}",
+            ))),
         }
     }
 
@@ -316,6 +318,50 @@ impl BtcSignature {
             sig.push(signature.to_vec());
         }
         Ok(sig)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::btc::provider::{Provider, ProviderConfig};
+    use bitcoin::{absolute::LockTime, transaction::Version};
+
+    #[tokio::test]
+    async fn test_multisig_sign_v1_rejects_unsupported_address_type() {
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let secret = bitcoin::secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap();
+        let private_key = PrivateKey::new(secret, bitcoin::Network::Testnet);
+        let used_utxo = Usedutxo::default();
+        let signer = BtcSignature::new(&private_key.to_wif(), used_utxo).unwrap();
+
+        let provider = Provider::new(
+            ProviderConfig {
+                rpc_url: "http://127.0.0.1:8332".to_string(),
+                rpc_auth: None,
+                http_url: "http://127.0.0.1:8332".to_string(),
+                http_api_key: None,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+
+        let tx = Transaction {
+            version: Version::TWO,
+            lock_time: LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        };
+
+        let script = ScriptBuf::new();
+        let err = signer
+            .multisig_sign_v1(BtcAddressType::P2pkh, script, tx, &provider)
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, crate::Error::SignError(_)));
+        let _ = secp;
     }
 }
 

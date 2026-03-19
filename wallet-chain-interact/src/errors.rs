@@ -144,6 +144,8 @@ pub enum Error {
     NotSupportApi(String),
     #[error("rpc error {0}")]
     RpcError(String),
+    #[error("invalid tron resource type {0}")]
+    InvalidResourceType(String),
     #[error("contract validation error {0}")]
     ContractValidationError(ContractValidationError),
     #[error("parse error {0}")]
