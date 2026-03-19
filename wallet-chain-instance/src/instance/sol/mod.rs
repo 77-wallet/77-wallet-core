@@ -119,77 +119,84 @@ pub fn address_from_secret_key(prik: &str) -> Result<solana_sdk::pubkey::Pubkey,
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use coins_bip39::{English, Mnemonic};
+    use crate::instance::sol::address::SolGenAddress;
+    use wallet_core::{address::GenAddress, derive::GenDerivation, KeyPair};
+    use wallet_types::chain::{chain::ChainCode, network::NetworkKind};
 
-    const SOL_COIN_TYPE: u32 = 501 | 0x80000000; // 784' 的硬化编码
-    const BIP44_PURPOSE: u32 = 44 | 0x80000000; // 44' 的硬化编码
+    fn test_instance() -> SolanaInstance {
+        SolanaInstance {
+            chain_code: ChainCode::Solana,
+            network: NetworkKind::Mainnet,
+        }
+    }
+
+    fn test_seed() -> Vec<u8> {
+        let mnemonic = "film crazy soon outside stand loop subway crumble thrive popular green nuclear struggle pistol arm wife phrase warfare march wheat nephew ask sunny firm";
+        let mnemonic =
+            Mnemonic::<English>::new_from_phrase(mnemonic).expect("Invalid mnemonic phrase");
+        mnemonic.to_seed(Some("")).unwrap().to_vec()
+    }
 
     #[test]
-    fn test_i32_as_u32() {
-        // 测试正数转换
-        let positive: i32 = 42;
-        let positive_converted = positive as u32;
+    fn test_generate_derivation_path() {
         assert_eq!(
-            positive_converted, 42,
-            "Positive i32 should convert to the same u32 value"
+            SolanaInstance::generate(&None, 0).unwrap(),
+            "m/44'/501'/0'/0"
         );
-        let negative: i32 = -4669;
-
-        let index = if negative < 0 {
-            negative
-                .checked_add_unsigned(coins_bip32::BIP32_HARDEN)
-                .unwrap() as u32
-        } else {
-            negative as u32
-        };
-
-        println!("index: {}", index);
-
-        // 测试负数转换
-        let negative_converted = negative as u32;
-        // -42 的二进制表示转换为 u32 会得到一个较大的无符号整数
-        let res = u32::MAX - 4668;
-        println!("res: {}", res);
         assert_eq!(
-            negative_converted, res,
-            "Negative i32 should convert to a large u32 value"
+            SolanaInstance::generate(&None, 7).unwrap(),
+            "m/44'/501'/7'/0"
         );
     }
 
     #[test]
-    fn test_official_vector() {
-        let mnemonic =
-        // "";
-        "film crazy soon outside stand loop subway crumble thrive popular green nuclear struggle pistol arm wife phrase warfare march wheat nephew ask sunny firm";
-        // 1. 生成 BIP-39 种子（空密码）
-        let mnemonic =
-            Mnemonic::<English>::new_from_phrase(mnemonic).expect("Invalid mnemonic phrase");
-        let seed = mnemonic.to_seed(Some("")).unwrap(); // 注意：必须使用 Some("")
+    fn test_generate_keypair_and_address() {
+        let seed = test_seed();
+        let instance = test_instance();
+        let derivation_path = SolanaInstance::generate(&None, 2147483647).unwrap();
+        assert_eq!(derivation_path, "m/44'/501'/2147483647'/0");
 
-        // 2. 构造完整派生路径
-        let path = format!(
-            "m/{}'/{}'/2147483647'/0",   // 官方测试用例路径
-            BIP44_PURPOSE & !0x80000000, // 显示逻辑值 44'
-            SOL_COIN_TYPE & !0x80000000  // 显示逻辑值 501'
-        );
-        println!("path: {path}");
-        let derivation = solana_sdk::derivation_path::DerivationPath::from_absolute_path_str(&path)
-            .map_err(|e| crate::Error::Keypair(crate::KeypairError::Solana(e.to_string())))
+        let keypair = instance
+            .derive_with_derivation_path(seed, &derivation_path)
             .unwrap();
-        let keypair =
-            solana_sdk::signature::keypair_from_seed_and_derivation_path(&seed, Some(derivation))
-                .map_err(|e| crate::Error::Keypair(crate::KeypairError::Solana(e.to_string())))
-                .unwrap();
 
-        use solana_sdk::signature::Signer as _;
+        assert_eq!(keypair.chain_code(), ChainCode::Solana);
+        assert_eq!(keypair.network(), NetworkKind::Mainnet);
+        assert_eq!(keypair.derivation_path(), derivation_path);
+        assert_eq!(keypair.address(), keypair.pubkey());
+        assert_eq!(keypair.address(), "Es78uhRuMT5D5sZtxMum5vNSmTGrkTcLz3kwwH9LKK3h");
 
-        let pubkey = keypair.pubkey().to_string();
-        println!("address: {}", pubkey);
-        // "suiprivkey1qr4w9sqf2dlq9uwpml6gtyr9mwhwlgyc40nnpf8uk5k9yuzt0q29vep62tu";
-        // assert_eq!(
-        //     address,
-        //     // "0xa2d14fad60c56049ecf75246a481934691214ce413e6a8ae2fe6834c173a6133"
-        //     "0x885f29a4f1b4d63822728a1b1811d0278c4e25f27d3754ddd387cd34f9482d0f"
-        // );
+        let private_key = keypair.private_key().unwrap();
+        assert_eq!(
+            address_from_secret_key(&private_key).unwrap().to_string(),
+            keypair.address()
+        );
+
+        assert_eq!(
+            secret_key_to_address(&keypair.private_key_bytes().unwrap())
+                .unwrap()
+                .to_string(),
+            keypair.address()
+        );
+    }
+
+    #[test]
+    fn test_gen_address_matches_generated_keypair() {
+        let seed = test_seed();
+        let instance = test_instance();
+        let derivation_path = SolanaInstance::generate(&None, 0).unwrap();
+        let keypair = instance
+            .derive_with_derivation_path(seed, &derivation_path)
+            .unwrap();
+        let private_key_bytes = keypair.private_key_bytes().unwrap();
+
+        let generated = SolGenAddress {}
+            .generate(&private_key_bytes)
+            .unwrap();
+
+        assert_eq!(generated.to_string(), keypair.address());
+        assert_eq!((SolGenAddress {}).chain_code(), &ChainCode::Solana);
     }
 }
