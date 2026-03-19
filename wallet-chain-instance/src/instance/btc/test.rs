@@ -8,21 +8,16 @@ use bitcoin::{
 use ripemd160::Digest as _;
 use secp256k1::hashes::HashEngine as _;
 use std::str::FromStr;
+use wallet_core::language::Language;
 
 fn private_key() -> Xpriv {
-    // let mnemonic = "victory member rely dirt treat woman boring tomato two hollow erosion drop";
+    let mnemonic = Language::English.gen_phrase(12).unwrap().join(" ");
     let mnemonic =
-        "chuckle practice chicken permit swarm giant improve absurd melt kitchen oppose scrub";
-    let mnemonic =
-        coins_bip39::Mnemonic::<coins_bip39::English>::new_from_phrase(mnemonic).unwrap();
+        coins_bip39::Mnemonic::<coins_bip39::English>::new_from_phrase(&mnemonic).unwrap();
     // 生成种子
     // let seed = mnemonic.to_seed(Some("12345678")).unwrap();
     let seed = mnemonic.to_seed(Some("")).unwrap();
     let xpriv = Xpriv::new_master(Network::Bitcoin, &seed).unwrap();
-    let pkey = xpriv.private_key.secret_bytes();
-    tracing::warn!("pkey: {pkey:?}");
-
-    tracing::warn!("xprive: {:?}", xpriv.encode());
     xpriv
 }
 
@@ -146,8 +141,6 @@ mod tests {
 
         let keypair = key.to_keypair(&secp);
         let pubkey = keypair.public_key();
-        let pubkey_str = pubkey.to_string();
-        tracing::info!("pubkey: {pubkey_str}");
 
         let pubkey = pubkey.serialize();
         let network = wallet_types::chain::network::NetworkKind::Mainnet;

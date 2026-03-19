@@ -20,12 +20,12 @@ impl wallet_core::address::GenAddress for TrxGenAddress {
 #[cfg(test)]
 mod test {
     use anychain_core::Address as _;
+    use wallet_core::language::Language;
 
     #[test]
     fn test_() {
+        let phrase = Language::English.gen_phrase(12).unwrap().join(" ");
         let language = 1;
-        let phrase =
-            "member diesel marine culture boat differ spirit patient drum fix chunk sadness";
         let password = "1234qwer";
         let (key, _) =
             wallet_core::xpriv::generate_master_key(language, &phrase, password).unwrap();

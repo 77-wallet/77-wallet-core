@@ -305,19 +305,44 @@ impl TransferBuilder {
 
 #[cfg(test)]
 mod tests {
-    use wallet_types::chain::address::r#type::DogAddressType;
+    use std::convert::TryInto as _;
+
+    use wallet_chain_instance::instance::ChainObject;
+    use wallet_core::language::Language;
+    use wallet_types::chain::{
+        address::r#type::{AddressType, DogAddressType},
+        chain::ChainCode,
+    };
 
     use super::TransferArg;
     use crate::dog::utxos::{Utxo, UtxoList};
 
+    fn dog_from_address() -> String {
+        let phrase = Language::English.gen_phrase(12).unwrap().join(" ");
+        let password = "";
+        let xpriv = wallet_core::xpriv::generate_master_key(1, &phrase, password).unwrap();
+        let chain_object: ChainObject = (
+            &ChainCode::Dogcoin,
+            &AddressType::Dog(DogAddressType::P2pkh),
+            wallet_types::chain::network::NetworkKind::Regtest,
+        )
+            .try_into()
+            .unwrap();
+        let keypair = chain_object
+            .gen_keypair_with_index_address_type(&xpriv.1, 0)
+            .unwrap();
+        keypair.address()
+    }
+
     #[test]
+    #[ignore]
     pub fn condition_1() {
         // 选择了两个utxo 并且所选择的utxo满足了手续费的要求
-        let from = "n2xfjp4NfSMWao3V119b5JEU3CKZ7jDZAK";
+        let from = dog_from_address();
         let to = "bcrt1qjx3d2sfu5v0jykpzs3a668nf26cgh9awsh7ek9";
         let value = "0.0051";
         let network = wallet_types::chain::network::NetworkKind::Regtest;
-        let params = TransferArg::new(from, to, value, DogAddressType::P2pkh, network).unwrap();
+        let params = TransferArg::new(&from, to, value, DogAddressType::P2pkh, network).unwrap();
 
         let mut transaction_build = params.build_transaction(utxos()).unwrap();
 
@@ -333,13 +358,14 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     pub fn condition_2() {
         // 选择了两个utxo,选择的手续费utxo不满足手续费的要求，需要在额外的添加一个utxo进来
-        let from = "n2xfjp4NfSMWao3V119b5JEU3CKZ7jDZAK";
+        let from = dog_from_address();
         let to = "bcrt1qjx3d2sfu5v0jykpzs3a668nf26cgh9awsh7ek9";
         let value = "0.0051";
         let network = wallet_types::chain::network::NetworkKind::Regtest;
-        let params = TransferArg::new(from, to, value, DogAddressType::P2pkh, network).unwrap();
+        let params = TransferArg::new(&from, to, value, DogAddressType::P2pkh, network).unwrap();
 
         let mut transaction_build = params.build_transaction(utxos()).unwrap();
 

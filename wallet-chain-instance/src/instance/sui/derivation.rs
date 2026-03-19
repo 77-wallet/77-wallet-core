@@ -64,6 +64,7 @@ pub(crate) fn get_pub_key(key: [u8; 32]) -> Result<ed25519_dalek::VerifyingKey, 
 mod tests {
     use super::*;
     use coins_bip39::{English, Mnemonic};
+    use wallet_core::language::Language;
     const SUI_COIN_TYPE: u32 = 784 | 0x80000000; // 784' 的硬化编码
     const BIP44_PURPOSE: u32 = 44 | 0x80000000; // 44' 的硬化编码
 
@@ -83,12 +84,9 @@ mod tests {
 
     #[test]
     fn test_official_vector() {
+        let mnemonic = Language::English.gen_phrase(12).unwrap().join(" ");
         let mnemonic =
-        // "";
-        "film crazy soon outside stand loop subway crumble thrive popular green nuclear struggle pistol arm wife phrase warfare march wheat nephew ask sunny firm";
-        // 1. 生成 BIP-39 种子（空密码）
-        let mnemonic =
-            Mnemonic::<English>::new_from_phrase(mnemonic).expect("Invalid mnemonic phrase");
+            Mnemonic::<English>::new_from_phrase(&mnemonic).expect("Invalid mnemonic phrase");
         let seed = mnemonic.to_seed(Some("")).unwrap(); // 注意：必须使用 Some("")
 
         // 2. 构造完整派生路径
@@ -101,12 +99,8 @@ mod tests {
         let address = get_sui_address(&seed, &path).unwrap();
 
         println!("address: {}", address);
-        // "suiprivkey1qr4w9sqf2dlq9uwpml6gtyr9mwhwlgyc40nnpf8uk5k9yuzt0q29vep62tu";
-        // assert_eq!(
-        //     address,
-        //     // "0xa2d14fad60c56049ecf75246a481934691214ce413e6a8ae2fe6834c173a6133"
-        //     "0x885f29a4f1b4d63822728a1b1811d0278c4e25f27d3754ddd387cd34f9482d0f"
-        // );
+        assert!(address.starts_with("0x"));
+        assert_eq!(address.len(), 66);
     }
 
     #[test]

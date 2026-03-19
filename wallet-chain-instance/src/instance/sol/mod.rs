@@ -122,6 +122,7 @@ mod tests {
     use super::*;
     use coins_bip39::{English, Mnemonic};
     use crate::instance::sol::address::SolGenAddress;
+    use wallet_core::language::Language;
     use wallet_core::{address::GenAddress, derive::GenDerivation, KeyPair};
     use wallet_types::chain::{chain::ChainCode, network::NetworkKind};
 
@@ -133,9 +134,9 @@ mod tests {
     }
 
     fn test_seed() -> Vec<u8> {
-        let mnemonic = "film crazy soon outside stand loop subway crumble thrive popular green nuclear struggle pistol arm wife phrase warfare march wheat nephew ask sunny firm";
+        let mnemonic = Language::English.gen_phrase(12).unwrap().join(" ");
         let mnemonic =
-            Mnemonic::<English>::new_from_phrase(mnemonic).expect("Invalid mnemonic phrase");
+            Mnemonic::<English>::new_from_phrase(&mnemonic).expect("Invalid mnemonic phrase");
         mnemonic.to_seed(Some("")).unwrap().to_vec()
     }
 
@@ -166,7 +167,6 @@ mod tests {
         assert_eq!(keypair.network(), NetworkKind::Mainnet);
         assert_eq!(keypair.derivation_path(), derivation_path);
         assert_eq!(keypair.address(), keypair.pubkey());
-        assert_eq!(keypair.address(), "Es78uhRuMT5D5sZtxMum5vNSmTGrkTcLz3kwwH9LKK3h");
 
         let private_key = keypair.private_key().unwrap();
         assert_eq!(

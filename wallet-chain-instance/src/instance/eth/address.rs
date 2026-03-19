@@ -26,11 +26,12 @@ impl wallet_core::address::GenAddress for EthGenAddress {
 
 #[cfg(test)]
 mod test {
+    use wallet_core::language::Language;
 
     #[test]
     fn test_() {
+        let phrase = Language::English.gen_phrase(12).unwrap().join(" ");
         let language = 1;
-        let phrase = "fan swamp loop mesh enact tennis priority artefact canal hour skull joy";
         let password = "123";
         let (key, _) =
             wallet_core::xpriv::generate_master_key(language, &phrase, password).unwrap();
