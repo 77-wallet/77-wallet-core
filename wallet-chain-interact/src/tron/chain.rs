@@ -1,6 +1,7 @@
 use super::operations::contract::TriggerContractParameter;
 use super::operations::{self, RawData, RawTransactionParams};
 use super::params::ResourceConsumer;
+use super::protocol::receipt::TransactionInfo;
 use super::protocol::account::{AccountResourceDetail, TronAccount};
 use super::provider::Provider;
 use crate::QueryTransactionResult;
@@ -221,8 +222,7 @@ impl TronChain {
 
     // 查询交易结果
     pub async fn query_tx_res(&self, hash: &str) -> crate::Result<Option<QueryTransactionResult>> {
-        let transaction = self.provider.query_tx_info(hash).await;
-        let transaction = match transaction {
+        let transaction = match self.provider.query_tx_info(hash).await {
             Ok(transaction) => transaction,
             Err(err) => {
                 tracing::error!("query tron transaction {} error: {:?}", hash, err);
@@ -230,6 +230,17 @@ impl TronChain {
             }
         };
 
+        Ok(Some(Self::build_query_transaction_result(transaction)?))
+    }
+
+    /// 查询 pending pool 是否已见到该 tx
+    pub async fn has_pending_tx(&self, hash: &str) -> crate::Result<bool> {
+        self.provider.has_pending_tx(hash).await
+    }
+
+    fn build_query_transaction_result(
+        transaction: TransactionInfo,
+    ) -> crate::Result<QueryTransactionResult> {
         // timestamp unit ms to s
         // let time = (transaction.block_timestamp / 1000) - (8 * 3600);
         let time = transaction.block_timestamp / 1000;
@@ -240,14 +251,14 @@ impl TronChain {
             .receipt
             .get_bill_resource_consumer()
             .to_json_str()?;
-        Ok(Some(QueryTransactionResult::new(
+        Ok(QueryTransactionResult::new(
             transaction.id,
             fee,
             resource_consume,
             time,
             status,
             transaction.block_number,
-        )))
+        ))
     }
 
     // pub async fn withdraw_unfreeze_amount(
@@ -265,4 +276,35 @@ impl TronChain {
     //     let rs = self.exec_multisig_transaction(raw, vec![sign_str]).await?;
     //     Ok(rs)
     // }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tron::protocol::receipt::{TransactionInfo, TronReceipt};
+
+    #[test]
+    fn build_query_transaction_result_maps_confirmed_transaction() {
+        let tx = TransactionInfo {
+            id: "tx123".to_string(),
+            fee: 1_000_000.0,
+            block_number: 123,
+            block_timestamp: 1_700_000_000_000,
+            contract_result: vec!["0x01".to_string()],
+            receipt: TronReceipt {
+                net_usage: Some(210),
+                energy_usage: Some(42),
+                energy_usage_total: None,
+            },
+            result: None,
+            res_message: None,
+        };
+
+        let res = TronChain::build_query_transaction_result(tx).expect("map transaction");
+
+        assert_eq!(res.hash, "tx123");
+        assert_eq!(res.status, 2);
+        assert_eq!(res.block_height, 123);
+        assert_eq!(res.transaction_time, 1_700_000_000);
+    }
 }

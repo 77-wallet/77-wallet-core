@@ -202,6 +202,21 @@ impl Provider {
         Ok(result)
     }
 
+    // 查询 pending pool 里的交易是否存在
+    pub async fn has_pending_tx(&self, tx_hash: &str) -> crate::Result<bool> {
+        let params = HashMap::from([("value", tx_hash)]);
+        match self
+            .do_request::<_, serde_json::Value>("wallet/gettransactionfrompending", Some(params))
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                tracing::warn!("query tron pending transaction {} error: {:?}", tx_hash, err);
+                Ok(false)
+            }
+        }
+    }
+
     // exec raw transaction
     pub async fn exec_raw_transaction<T>(
         &self,
