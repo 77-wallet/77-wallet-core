@@ -40,7 +40,7 @@ impl SendTransactionOpts {
     pub fn legacy_broadcast() -> Self {
         Self {
             preflight_commitment: Some(CommitmentConfig::Processed),
-            max_retries: Some(2),
+            max_retries: Some(5),
         }
     }
 
