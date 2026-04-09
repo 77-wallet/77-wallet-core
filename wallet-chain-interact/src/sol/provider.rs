@@ -225,7 +225,8 @@ impl Provider {
     }
 
     pub async fn broadcast_legacy(&self, raw_tx: &str) -> crate::Result<String> {
-        let result = self.send_transaction(raw_tx, false).await?;
+        // Legacy broadcast should still allow the node to retry forwarding.
+        let result = self.send_transaction(raw_tx, true).await?;
         Ok(result)
     }
 
