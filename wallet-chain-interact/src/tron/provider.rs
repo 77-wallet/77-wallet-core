@@ -211,7 +211,11 @@ impl Provider {
         {
             Ok(_) => Ok(true),
             Err(err) => {
-                tracing::warn!("query tron pending transaction {} error: {:?}", tx_hash, err);
+                tracing::warn!(
+                    "query tron pending transaction {} error: {:?}",
+                    tx_hash,
+                    err
+                );
                 Ok(false)
             }
         }

@@ -1,8 +1,8 @@
 use super::operations::contract::TriggerContractParameter;
 use super::operations::{self, RawData, RawTransactionParams};
 use super::params::ResourceConsumer;
-use super::protocol::receipt::TransactionInfo;
 use super::protocol::account::{AccountResourceDetail, TronAccount};
+use super::protocol::receipt::TransactionInfo;
 use super::provider::Provider;
 use crate::QueryTransactionResult;
 use crate::tron::protocol::protobuf::transaction::Raw;

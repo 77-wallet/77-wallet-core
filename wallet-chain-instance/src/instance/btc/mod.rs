@@ -34,7 +34,7 @@ impl wallet_core::derive::GenDerivation for BitcoinInstance {
     fn generate(
         address_type: &Option<BtcAddressType>,
         input_index: i32,
-        ) -> Result<String, crate::Error> {
+    ) -> Result<String, crate::Error> {
         let path = if input_index < 0 {
             let i = wallet_utils::address::i32_index_to_unhardened_u32(input_index)?;
             let path = if let Some(address_type) = address_type {
