@@ -36,6 +36,10 @@ rev = "7ddd03c31fdec4f9575438688e7f58f5c692419b"
 # rev = "d9f20e951a06b61e4505da0955228020b96a8915"
 
 
+[patch.crates-io.core2]
+git = "https://github.com/technocreatives/core2"
+rev = "545e84bcb0f235b12e21351e0c69767958efe2a7"
+
 [workspace.dependencies]
 wallet-chain-interact = { version = "0.1.0", default-features = false, path = "wallet-chain-interact" }
 wallet-chain-instance = { version = "0.1.0", default-features = false, path = "wallet-chain-instance" }
