@@ -120,10 +120,10 @@ pub fn address_from_secret_key(prik: &str) -> Result<solana_sdk::pubkey::Pubkey,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coins_bip39::{English, Mnemonic};
     use crate::instance::sol::address::SolGenAddress;
+    use coins_bip39::{English, Mnemonic};
     use wallet_core::language::Language;
-    use wallet_core::{address::GenAddress, derive::GenDerivation, KeyPair};
+    use wallet_core::{KeyPair, address::GenAddress, derive::GenDerivation};
     use wallet_types::chain::{chain::ChainCode, network::NetworkKind};
 
     fn test_instance() -> SolanaInstance {
@@ -192,9 +192,7 @@ mod tests {
             .unwrap();
         let private_key_bytes = keypair.private_key_bytes().unwrap();
 
-        let generated = SolGenAddress {}
-            .generate(&private_key_bytes)
-            .unwrap();
+        let generated = SolGenAddress {}.generate(&private_key_bytes).unwrap();
 
         assert_eq!(generated.to_string(), keypair.address());
         assert_eq!((SolGenAddress {}).chain_code(), &ChainCode::Solana);

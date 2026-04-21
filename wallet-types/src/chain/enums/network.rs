@@ -59,9 +59,18 @@ mod tests {
 
     #[test]
     fn test_parse_network_kind() {
-        assert_eq!(NetworkKind::try_from("mainnet").unwrap(), NetworkKind::Mainnet);
-        assert_eq!(NetworkKind::try_from("testnet").unwrap(), NetworkKind::Testnet);
-        assert_eq!(NetworkKind::try_from("regtest").unwrap(), NetworkKind::Regtest);
+        assert_eq!(
+            NetworkKind::try_from("mainnet").unwrap(),
+            NetworkKind::Mainnet
+        );
+        assert_eq!(
+            NetworkKind::try_from("testnet").unwrap(),
+            NetworkKind::Testnet
+        );
+        assert_eq!(
+            NetworkKind::try_from("regtest").unwrap(),
+            NetworkKind::Regtest
+        );
         assert!(NetworkKind::try_from("invalid").is_err());
     }
 }

@@ -71,12 +71,15 @@ mod tests {
         let kdf = KdfFactory::create(&KdfAlgorithm::Pbkdf2, salt).unwrap();
 
         assert_eq!(kdf.algorithm(), KdfAlgorithm::Pbkdf2);
-        assert_eq!(kdf.params(), KdfParams::Pbkdf2(Pbkdf2Params {
-            c: 262_144,
-            dklen: 32,
-            prf: "hmac-sha256".to_string(),
-            salt: HexBytes(salt.to_vec()),
-        }));
+        assert_eq!(
+            kdf.params(),
+            KdfParams::Pbkdf2(Pbkdf2Params {
+                c: 262_144,
+                dklen: 32,
+                prf: "hmac-sha256".to_string(),
+                salt: HexBytes(salt.to_vec()),
+            })
+        );
 
         let derived = kdf.derive_key(b"password").unwrap();
         assert_eq!(derived.len(), 32);

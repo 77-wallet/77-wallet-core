@@ -54,7 +54,10 @@ mod tests {
     #[test]
     fn test_invalid_resource_type() {
         assert!(ResourceType::try_from("invalid").is_err());
-        assert_eq!(ResourceType::try_from("energy").unwrap(), ResourceType::ENERGY);
+        assert_eq!(
+            ResourceType::try_from("energy").unwrap(),
+            ResourceType::ENERGY
+        );
         assert_eq!(
             ResourceType::try_from("bandwidth").unwrap(),
             ResourceType::BANDWIDTH

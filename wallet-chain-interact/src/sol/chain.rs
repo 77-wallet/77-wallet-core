@@ -276,7 +276,7 @@ impl SolanaChain {
         );
         let raw_tx =
             solana_sdk::bs58::encode(wallet_utils::hex_func::bin_encode_bytes(&tx)?).into_string();
-        let res = self.provider.send_transaction(&raw_tx, true).await?;
+        let res = self.provider.broadcast_legacy(&raw_tx).await?;
 
         Ok(MultisigSignResp::new_with_tx_hash(
             res,
