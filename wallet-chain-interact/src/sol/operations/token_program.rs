@@ -58,7 +58,8 @@ mod tests {
 
     #[test]
     fn unknown_owner_is_rejected() {
-        let err = token_program_id_from_owner("unknown-owner").expect_err("unknown owner should fail");
+        let err =
+            token_program_id_from_owner("unknown-owner").expect_err("unknown owner should fail");
 
         assert!(
             matches!(err, Error::Other(message) if message.contains("unsupported sol token program owner"))

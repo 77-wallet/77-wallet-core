@@ -1,7 +1,5 @@
 use crate::sol::{
-    operations::{
-        contract::TokenTransferBuild, token_program::resolve_mint_token_program_id,
-    },
+    operations::{contract::TokenTransferBuild, token_program::resolve_mint_token_program_id},
     provider::Provider,
 };
 use async_trait::async_trait;
@@ -70,11 +68,8 @@ impl super::SolTransferOperation for TransferOpt<'_> {
     async fn extra_fee(&self) -> crate::Result<Option<u64>> {
         if let Some(token) = self.token {
             let token_program_id = resolve_mint_token_program_id(self.provider, token).await?;
-            let destination_pubkey = get_associated_token_address_with_program_id(
-                &self.to,
-                &token,
-                &token_program_id,
-            );
+            let destination_pubkey =
+                get_associated_token_address_with_program_id(&self.to, &token, &token_program_id);
 
             // Check whether the address has a token account.
             let to_account = self.provider.account_info(destination_pubkey).await?;

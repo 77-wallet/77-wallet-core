@@ -1,14 +1,12 @@
 use crate::sol::{
     Provider,
     operations::{
-        SolInstructionOperation, SolTransferOperation,
-        token_program::resolve_mint_token_program_id,
+        SolInstructionOperation, SolTransferOperation, token_program::resolve_mint_token_program_id,
     },
 };
 use solana_sdk::{bpf_loader_upgradeable, signature::Keypair};
 use spl_associated_token_account::{
-    get_associated_token_address_with_program_id,
-    instruction::create_associated_token_account,
+    get_associated_token_address_with_program_id, instruction::create_associated_token_account,
 };
 use wallet_utils::address;
 
