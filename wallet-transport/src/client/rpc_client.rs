@@ -117,6 +117,7 @@ impl RpcClient {
         if let Some(err) = rpc_result.error {
             return Err(TransportError::NodeResponseError(NodeResponseError::new(
                 err.code,
+                &self.base_url,
                 Some(err.message),
             )));
         }

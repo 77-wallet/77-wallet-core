@@ -1,4 +1,5 @@
 use thiserror::Error;
+use wallet_utils::RetryableError;
 
 #[derive(Error, Debug)]
 pub enum SuiError {
@@ -10,4 +11,26 @@ pub enum SuiError {
     GasError(String),
     #[error("Insufficient fee: only {0} available, but {1} needed")]
     InsufficientFee(u64, u64),
+}
+
+impl RetryableError for SuiError {
+    // 使用默认实现
+    // fn is_network_error(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn is_html_error(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn is_delay_retryable(&self) -> bool {
+    //     false
+    // }
+
+    // 使用默认实现
+    // fn retry_policy(&self) -> RetryPolicy {
+    //     RetryPolicy::Never
+    // }
 }

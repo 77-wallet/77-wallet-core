@@ -52,7 +52,7 @@ pub fn derivation_path_percent_decode(
 
 pub fn derivation_path_percent_encode(
     raw_derivation_path: &str,
-) -> percent_encoding::PercentEncode {
+) -> percent_encoding::PercentEncode<'_> {
     percent_encoding::percent_encode(
         raw_derivation_path.as_bytes(),
         percent_encoding::NON_ALPHANUMERIC,

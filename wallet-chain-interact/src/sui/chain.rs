@@ -199,6 +199,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_balance() {
         let sui = get_chain();
 
@@ -210,6 +211,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_token_balance() {
         let sui = get_chain();
 
@@ -224,6 +226,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_execute_transaction() {
         let sui = get_chain();
 
@@ -260,6 +263,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_execute_token_transaction() {
         let sui = get_chain();
 

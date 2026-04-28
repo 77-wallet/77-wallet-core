@@ -30,6 +30,28 @@ pub struct Provider {
     pub client: RpcClient,
 }
 
+#[derive(Debug, Default)]
+pub struct SendTransactionOpts {
+    pub preflight_commitment: Option<CommitmentConfig>,
+    pub max_retries: Option<u32>,
+}
+
+impl SendTransactionOpts {
+    pub fn legacy_broadcast() -> Self {
+        Self {
+            preflight_commitment: Some(CommitmentConfig::Processed),
+            max_retries: Some(5),
+        }
+    }
+
+    pub fn legacy_send_only() -> Self {
+        Self {
+            preflight_commitment: Some(CommitmentConfig::Processed),
+            max_retries: Some(0),
+        }
+    }
+}
+
 impl Provider {
     pub fn new(rpc_client: RpcClient) -> crate::Result<Self> {
         Ok(Self { client: rpc_client })
@@ -200,7 +222,35 @@ impl Provider {
         let raw_tx =
             solana_sdk::bs58::encode(wallet_utils::hex_func::bin_encode_bytes(&tx)?).into_string();
 
-        self.send_transaction(&raw_tx, true).await
+        self.broadcast_legacy(&raw_tx).await
+    }
+
+    pub async fn build_legacy_signed_tx(
+        &self,
+        instructions: Vec<Instruction>,
+        payer: &Pubkey,
+        keypair: &[&Keypair],
+    ) -> crate::Result<(String, String)> {
+        let block_hash = self.latest_blockhash(CommitmentConfig::Processed).await?;
+
+        let tx =
+            Transaction::new_signed_with_payer(&instructions, Some(payer), keypair, block_hash);
+
+        // raw_tx(base58)
+        let raw_tx =
+            solana_sdk::bs58::encode(wallet_utils::hex_func::bin_encode_bytes(&tx)?).into_string();
+
+        // hash = Signature
+        let tx_hash = tx.signatures[0].to_string();
+
+        Ok((tx_hash, raw_tx))
+    }
+
+    pub async fn broadcast_legacy(&self, raw_tx: &str) -> crate::Result<String> {
+        let result = self
+            .send_transaction_with_opts(raw_tx, SendTransactionOpts::legacy_broadcast())
+            .await?;
+        Ok(result)
     }
 
     // 执行v0的交易,
@@ -274,7 +324,9 @@ impl Provider {
             let raw_tx = solana_sdk::bs58::encode(wallet_utils::hex_func::bin_encode_bytes(&tx)?)
                 .into_string();
 
-            let tx_hash = self.send_transaction(&raw_tx, false).await?;
+            let tx_hash = self
+                .send_transaction_with_opts(&raw_tx, SendTransactionOpts::legacy_send_only())
+                .await?;
 
             // query result
             for _ in 0..get_status_time {
@@ -348,24 +400,48 @@ impl Provider {
         Ok(result.value[0].clone())
     }
 
-    pub async fn send_transaction(&self, tx: &str, node_retry: bool) -> crate::Result<String> {
-        let req = if node_retry {
-            json!([tx])
-        } else {
-            json!([
-                tx,
-                json!({
-                     "maxRetries":0,
-                     "preflightCommitment":CommitmentConfig::Processed.to_string(),
-                })
-            ])
-        };
+    fn build_send_transaction_request(tx: &str, opts: &SendTransactionOpts) -> serde_json::Value {
+        let mut request = vec![json!(tx)];
+        let mut config = serde_json::Map::new();
 
+        if let Some(max_retries) = opts.max_retries {
+            config.insert("maxRetries".to_string(), json!(max_retries));
+        }
+        if let Some(preflight_commitment) = &opts.preflight_commitment {
+            config.insert(
+                "preflightCommitment".to_string(),
+                json!(preflight_commitment.to_string()),
+            );
+        }
+
+        if !config.is_empty() {
+            request.push(serde_json::Value::Object(config));
+        }
+
+        json!(request)
+    }
+
+    pub async fn send_transaction_with_opts(
+        &self,
+        tx: &str,
+        opts: SendTransactionOpts,
+    ) -> crate::Result<String> {
+        let req = Self::build_send_transaction_request(tx, &opts);
         let params = JsonRpcParams::default()
             .method("sendTransaction")
             .params(req);
 
         Ok(self.client.invoke_request::<_, String>(params).await?)
+    }
+
+    pub async fn send_transaction(&self, tx: &str, node_retry: bool) -> crate::Result<String> {
+        let opts = if node_retry {
+            SendTransactionOpts::legacy_broadcast()
+        } else {
+            SendTransactionOpts::legacy_send_only()
+        };
+
+        self.send_transaction_with_opts(tx, opts).await
     }
 
     // 发送base64编码的消息
@@ -617,5 +693,41 @@ impl Provider {
         }
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CommitmentConfig, Provider, SendTransactionOpts};
+    use serde_json::json;
+
+    #[test]
+    fn build_send_transaction_request_keeps_processed_commitment_and_retries() {
+        let req = Provider::build_send_transaction_request(
+            "base58-tx",
+            &SendTransactionOpts {
+                preflight_commitment: Some(CommitmentConfig::Processed),
+                max_retries: Some(2),
+            },
+        );
+
+        assert_eq!(
+            req,
+            json!([
+                "base58-tx",
+                {
+                    "maxRetries": 2,
+                    "preflightCommitment": "processed"
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn build_send_transaction_request_omits_config_when_empty() {
+        let req =
+            Provider::build_send_transaction_request("base58-tx", &SendTransactionOpts::default());
+
+        assert_eq!(req, json!(["base58-tx"]));
     }
 }

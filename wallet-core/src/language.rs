@@ -30,6 +30,60 @@ impl Language {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{Language, QueryMode, WordlistWrapper};
+
+    #[test]
+    fn language_from_u8_maps_and_rejects_unknown_codes() {
+        assert!(matches!(Language::from_u8(1), Ok(Language::English)));
+        assert!(matches!(Language::from_u8(10), Ok(Language::Spanish)));
+        assert!(matches!(
+            Language::from_u8(0),
+            Err(crate::Error::UnknownLanguage)
+        ));
+    }
+
+    #[test]
+    fn query_mode_from_u8_maps_and_rejects_unknown_codes() {
+        assert!(matches!(QueryMode::from_u8(1), Ok(QueryMode::StartsWith)));
+        assert!(matches!(QueryMode::from_u8(2), Ok(QueryMode::Contains)));
+        assert!(matches!(
+            QueryMode::from_u8(3),
+            Err(crate::Error::UnknownQueryMode)
+        ));
+    }
+
+    #[test]
+    fn wordlist_wrapper_new_rejects_unknown_language_code() {
+        assert!(matches!(
+            WordlistWrapper::new(255),
+            Err(crate::Error::UnknownLanguage)
+        ));
+    }
+
+    #[test]
+    fn query_phrase_supports_case_insensitive_starts_with_and_contains() {
+        let starts_with_results = WordlistWrapper::new(1)
+            .expect("english wordlist should be available")
+            .query_phrase("AB", QueryMode::StartsWith);
+        let contains_results = WordlistWrapper::new(1)
+            .expect("english wordlist should be available")
+            .query_phrase("BAND", QueryMode::Contains);
+
+        assert!(starts_with_results.iter().any(|word| word == "abandon"));
+        assert!(contains_results.iter().any(|word| word == "abandon"));
+    }
+
+    #[test]
+    fn exact_query_phrase_is_case_insensitive_and_returns_none_for_unknown_word() {
+        let wordlist = WordlistWrapper::new(1).expect("english wordlist should be available");
+
+        assert_eq!(wordlist.exact_query_phrase("ABANDON"), Some("abandon".to_string()));
+        assert_eq!(wordlist.exact_query_phrase("not_a_bip39_word"), None);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum WordlistWrapper {
     English(coins_bip39::English),
@@ -175,3 +229,5 @@ impl Language {
         Ok(words)
     }
 }
+
+

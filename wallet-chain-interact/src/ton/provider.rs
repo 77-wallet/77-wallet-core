@@ -51,6 +51,7 @@ impl Provider {
             return Err(wallet_transport::TransportError::NodeResponseError(
                 wallet_transport::errors::NodeResponseError::new(
                     result.code.unwrap_or(0),
+                    "jsonRPC",
                     result.error,
                 ),
             ));

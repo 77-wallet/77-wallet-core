@@ -267,8 +267,8 @@ impl ChainObject {
                 address_type: i.address_type,
                 network: i.network,
             }),
+            ChainObject::Ton(_) => return Err(crate::Error::TonAddressGenerationUnsupported),
             ChainObject::Sui(_) => Box::new(crate::instance::sui::address::SuiGenAddress {}),
-            _ => panic!("not suer used"),
         })
     }
 }
@@ -352,15 +352,15 @@ impl TryFrom<(&ChainCode, &AddressType, network::NetworkKind)> for ChainObject {
 #[cfg(test)]
 mod test {
     use super::ChainObject;
-    use wallet_core::xpriv;
+    use wallet_core::{language::Language, xpriv};
     use wallet_types::chain::{address::r#type::DOG_ADDRESS_TYPES, chain::ChainCode, network};
 
     #[test]
     fn test_gen() {
-        let phrase = "";
+        let phrase = Language::English.gen_phrase(12).unwrap().join(" ");
         let password = "";
 
-        let xpriv = xpriv::generate_master_key(1, phrase, password).unwrap();
+        let xpriv = xpriv::generate_master_key(1, &phrase, password).unwrap();
         let seed = xpriv.1;
 
         let code = ChainCode::Dogcoin;

@@ -3,6 +3,7 @@ use chrono::TimeZone;
 use regex::Regex;
 use serde::de;
 use thiserror::Error;
+use wallet_utils::{RetryPolicy, RetryableError};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -143,6 +144,8 @@ pub enum Error {
     NotSupportApi(String),
     #[error("rpc error {0}")]
     RpcError(String),
+    #[error("invalid tron resource type {0}")]
+    InvalidResourceType(String),
     #[error("contract validation error {0}")]
     ContractValidationError(ContractValidationError),
     #[error("parse error {0}")]
@@ -162,7 +165,38 @@ impl Error {
         match self {
             Error::TransportError(e) => e.is_network_error(),
             Error::UtilsError(e) => e.is_network_error(),
+            Error::RpcError(e) => e.contains("Transaction expired"),
             _ => false,
+        }
+    }
+}
+
+impl RetryableError for Error {
+    fn is_network_error(&self) -> bool {
+        self.is_network_error()
+    }
+
+    fn is_html_error(&self) -> bool {
+        match self {
+            Error::TransportError(e) => e.is_html_error(),
+            _ => false,
+        }
+    }
+
+    fn is_delay_retryable(&self) -> bool {
+        match self {
+            Error::TransportError(e) => e.is_delay_retryable(),
+            Error::UtilsError(e) => e.is_delay_retryable(),
+            Error::RpcError(e) => e.contains("Transaction expired"),
+            _ => false,
+        }
+    }
+
+    fn retry_policy(&self) -> RetryPolicy {
+        if self.is_delay_retryable() {
+            RetryPolicy::Delay
+        } else {
+            RetryPolicy::Never
         }
     }
 }

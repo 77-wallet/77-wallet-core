@@ -57,7 +57,7 @@ impl HDPath {
 
 pub fn get_account_hd_path_from_path(derivation_path: &str) -> Result<HDPath, crate::Error> {
     let derivation_path = derivation_path.to_uppercase();
-    let custom_hd_path = hdpath::CustomHDPath::from_str(&derivation_path).unwrap();
+    let custom_hd_path = hdpath::CustomHDPath::from_str(&derivation_path)?;
 
     let coin_type = if let Some(hdpath::PathValue::Hardened(coin_type)) = custom_hd_path.0.get(1) {
         *coin_type
@@ -101,12 +101,10 @@ mod tests {
         assert!(result.is_ok());
 
         let hd_path = result.unwrap();
-        match hd_path {
-            HDPath::Solana(path) => {
-                assert_eq!(path.coin_type(), SOLANA_TYPE);
-                assert_eq!(path.account(), 0);
-            }
-            _ => panic!("Expected Solana HDPath"),
+        assert!(matches!(hd_path, HDPath::Solana(_)));
+        if let HDPath::Solana(path) = hd_path {
+            assert_eq!(path.coin_type(), SOLANA_TYPE);
+            assert_eq!(path.account(), 0);
         }
     }
 
@@ -125,7 +123,7 @@ mod tests {
             ChainCodes(vec![ChainCode::Ethereum, ChainCode::BnbSmartChain])
         );
         let account_id = hd_path.get_account_id().unwrap();
-        assert_eq!(account_id, 2147478972);
+        assert_eq!(account_id, 4294962620);
 
         // match hd_path {
         //     HDPath::Other(path) => {

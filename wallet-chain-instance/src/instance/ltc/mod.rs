@@ -59,7 +59,7 @@ impl wallet_core::derive::GenDerivationLtc for LitecoinInstance {
             } else {
                 return Err(wallet_types::Error::LtcNeedAddressType.into());
             };
-            crate::add_index(path, i, true)
+            crate::add_index(path, i, true)?
         } else {
             let i = input_index as u32;
             let path = if let Some(address_type) = address_type {
@@ -79,7 +79,7 @@ impl wallet_core::derive::GenDerivationLtc for LitecoinInstance {
             } else {
                 return Err(wallet_types::Error::LtcNeedAddressType.into());
             };
-            crate::add_index(path, i, false)
+            crate::add_index(path, i, false)?
         };
 
         // let res = crate::add_index(path, account_id);

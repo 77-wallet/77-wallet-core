@@ -54,7 +54,7 @@ impl wallet_core::derive::GenDerivation for BitcoinInstance {
             } else {
                 return Err(wallet_types::Error::BtcNeedAddressType.into());
             };
-            crate::add_index(path, i, true)
+            crate::add_index(path, i, true)?
         } else {
             let i = input_index as u32;
             let path = if let Some(address_type) = address_type {
@@ -70,7 +70,7 @@ impl wallet_core::derive::GenDerivation for BitcoinInstance {
             } else {
                 return Err(wallet_types::Error::BtcNeedAddressType.into());
             };
-            crate::add_index(path, i, false)
+            crate::add_index(path, i, false)?
         };
 
         Ok(path)

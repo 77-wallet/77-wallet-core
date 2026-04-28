@@ -226,7 +226,9 @@ impl LtcSignature {
 
             let tweaked: TweakedKeypair = keypair.tap_tweak(&self.secp, None);
             let msg = Message::from(sighash);
-            let signature = self.secp.sign_schnorr(&msg, &tweaked.to_inner());
+            #[allow(deprecated)]
+            let tweaked = tweaked.to_inner();
+            let signature = self.secp.sign_schnorr(&msg, &tweaked);
             let signature = litecoin::taproot::Signature {
                 signature,
                 sighash_type,

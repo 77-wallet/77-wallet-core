@@ -130,6 +130,7 @@ pub mod check_black {
     pub const SOLANA: &[&str] = &["Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"];
     pub const BNB: &[&str] = &[];
     pub const TRON: &[&str] = &["TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"];
+    pub const TRON_TESTNET: &[&str] = &["TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"];
     pub const BTC: &[&str] = &[];
     pub const LTC: &[&str] = &[];
     pub const DOG: &[&str] = &[];

@@ -15,3 +15,17 @@ impl wallet_core::address::GenAddress for SolGenAddress {
         &wallet_types::chain::chain::ChainCode::Solana
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wallet_core::address::GenAddress;
+
+    #[test]
+    fn test_chain_code() {
+        assert_eq!(
+            SolGenAddress {}.chain_code(),
+            &wallet_types::chain::chain::ChainCode::Solana
+        );
+    }
+}

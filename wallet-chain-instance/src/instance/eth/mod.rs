@@ -27,10 +27,10 @@ impl wallet_core::derive::GenDerivation for EthereumInstance {
     ) -> Result<String, crate::Error> {
         let path = if input_index < 0 {
             let i = wallet_utils::address::i32_index_to_unhardened_u32(input_index)?;
-            crate::add_index(wallet_types::constant::ETH_HARD_DERIVATION_PATH, i, true)
+            crate::add_index(wallet_types::constant::ETH_HARD_DERIVATION_PATH, i, true)?
         } else {
             let i = input_index as u32;
-            crate::add_index(wallet_types::constant::ETH_DERIVATION_PATH, i, false)
+            crate::add_index(wallet_types::constant::ETH_DERIVATION_PATH, i, false)?
         };
         Ok(path)
     }
