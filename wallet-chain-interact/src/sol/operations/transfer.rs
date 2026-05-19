@@ -1,7 +1,10 @@
-use crate::sol::{operations::contract::TokenTransferBuild, provider::Provider};
+use crate::sol::{
+    operations::{contract::TokenTransferBuild, token_program::resolve_mint_token_program_id},
+    provider::Provider,
+};
 use async_trait::async_trait;
 use solana_sdk::program_pack::Pack;
-use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::get_associated_token_address_with_program_id;
 use wallet_utils::address;
 
 pub struct TransferOpt<'a> {
@@ -44,7 +47,7 @@ impl<'a> TransferOpt<'a> {
 impl super::SolInstructionOperation for TransferOpt<'_> {
     async fn instructions(&self) -> crate::Result<Vec<solana_sdk::instruction::Instruction>> {
         let instructions = if let Some(token) = self.token {
-            let token_build = TokenTransferBuild::new(self, token)?;
+            let token_build = TokenTransferBuild::new(self, token).await?;
             token_build.transfer_instruction().await?
         } else {
             vec![solana_sdk::system_instruction::transfer(
@@ -64,7 +67,9 @@ impl super::SolTransferOperation for TransferOpt<'_> {
     /// In an SPL token transfer, if the recipient’s token address does not exist, additional fees will be incurred to create the account.
     async fn extra_fee(&self) -> crate::Result<Option<u64>> {
         if let Some(token) = self.token {
-            let destination_pubkey = get_associated_token_address(&self.to, &token);
+            let token_program_id = resolve_mint_token_program_id(self.provider, token).await?;
+            let destination_pubkey =
+                get_associated_token_address_with_program_id(&self.to, &token, &token_program_id);
 
             // Check whether the address has a token account.
             let to_account = self.provider.account_info(destination_pubkey).await?;
