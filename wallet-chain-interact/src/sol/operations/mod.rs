@@ -1,6 +1,7 @@
 pub mod contract;
 pub mod multisig;
 pub mod native_coin;
+pub mod token_program;
 pub mod transfer;
 
 // to build instruction

@@ -223,11 +223,11 @@ impl Argon2idParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
+    use rand::{SeedableRng, rngs::OsRng};
 
     #[test]
     fn test_argon2id_basic() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rngs::StdRng::seed_from_u64(989);
         let kdf = Argon2idKdf::recommended_params(&mut rng);
         // let salt = generate_random_bytes(&mut rng, 16);
 
@@ -241,7 +241,7 @@ mod tests {
 
         // assert_eq!(key1, key2);
         assert_eq!(
-            "9e8789c8b42834220afc00085ac73acc308651216994abbfddd69b2592032efd",
+            "37f621610d5aa0380b9f10a12b58215439fcd223dc166e7eaaf26f917f092c3a",
             encode
         );
     }
