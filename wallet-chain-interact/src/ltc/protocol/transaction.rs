@@ -326,24 +326,97 @@ pub struct ApiVout {
 
 impl ValidateAddress {
     pub fn address_type(&self) -> Option<LtcAddressType> {
-        if self.isscript.is_some() && !self.isscript.unwrap() {
-            return Some(LtcAddressType::P2pkh);
-        } else if self.isscript.is_some() && self.isscript.unwrap() {
+        if self.isscript == Some(true) {
             return Some(LtcAddressType::P2shWpkh);
-        } else if self.iswitness.is_some()
-            && self.iswitness.unwrap()
-            && self.witness_version.is_some()
-            && self.witness_version.unwrap() == 0
-        {
-            return Some(LtcAddressType::P2wpkh);
-        } else if self.iswitness.is_some()
-            && self.witness_version.is_some()
-            && self.iswitness.unwrap()
-            && self.witness_version.unwrap() == 1
-        {
-            return Some(LtcAddressType::P2tr);
-        } else {
-            return None;
         }
+
+        if self.iswitness == Some(true) {
+            return match self.witness_version {
+                Some(0) => Some(LtcAddressType::P2wpkh),
+
+                Some(1) => Some(LtcAddressType::P2tr),
+
+                _ => None,
+            };
+        }
+
+        if self.isscript == Some(false) {
+            return Some(LtcAddressType::P2pkh);
+        }
+
+        None
+    }
+}
+
+#[cfg(test)]
+mod validate_address_tests {
+    use super::ValidateAddress;
+    use wallet_types::chain::address::r#type::LtcAddressType;
+
+    fn validate_address(
+        isscript: Option<bool>,
+        iswitness: Option<bool>,
+        witness_version: Option<u64>,
+    ) -> ValidateAddress {
+        ValidateAddress {
+            isvalid: true,
+            address: "ltc1qtest".to_string(),
+            isscript,
+            iswitness,
+            ismweb: None,
+            script_pub_key: None,
+            witness_program: None,
+            witness_version,
+            error: None,
+            error_locations: None,
+        }
+    }
+
+    #[test]
+    fn p2sh_wpkh_when_isscript_true() {
+        let v = validate_address(Some(true), Some(true), Some(0));
+        assert_eq!(v.address_type(), Some(LtcAddressType::P2shWpkh));
+    }
+
+    #[test]
+    fn p2wpkh_when_witness_v0() {
+        let v = validate_address(None, Some(true), Some(0));
+        assert_eq!(v.address_type(), Some(LtcAddressType::P2wpkh));
+    }
+
+    #[test]
+    fn p2tr_when_witness_v1() {
+        let v = validate_address(None, Some(true), Some(1));
+        assert_eq!(v.address_type(), Some(LtcAddressType::P2tr));
+    }
+
+    #[test]
+    fn p2pkh_when_isscript_false() {
+        let v = validate_address(Some(false), Some(false), None);
+        assert_eq!(v.address_type(), Some(LtcAddressType::P2pkh));
+    }
+
+    #[test]
+    fn none_for_unknown_witness_version() {
+        let v = validate_address(None, Some(true), Some(2));
+        assert_eq!(v.address_type(), None);
+    }
+
+    #[test]
+    fn none_when_witness_without_version() {
+        let v = validate_address(None, Some(true), None);
+        assert_eq!(v.address_type(), None);
+    }
+
+    #[test]
+    fn none_when_flags_unset() {
+        let v = validate_address(None, None, None);
+        assert_eq!(v.address_type(), None);
+    }
+
+    #[test]
+    fn isscript_true_takes_precedence_over_witness() {
+        let v = validate_address(Some(true), Some(true), Some(1));
+        assert_eq!(v.address_type(), Some(LtcAddressType::P2shWpkh));
     }
 }
