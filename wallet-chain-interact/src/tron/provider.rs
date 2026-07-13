@@ -54,6 +54,38 @@ struct ContractValidateException {
     error: crate::ContractValidationError,
 }
 
+fn parse_pending_tx_response(
+    expected_hash: &str,
+    response: &serde_json::Value,
+) -> crate::Result<bool> {
+    let object = response.as_object().ok_or_else(|| {
+        crate::Error::RpcNode(
+            "invalid TRON pending transaction response: expected object".to_string(),
+        )
+    })?;
+
+    if object.is_empty() {
+        return Ok(false);
+    }
+
+    let tx_id = object
+        .get("txID")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            crate::Error::RpcNode(
+                "invalid TRON pending transaction response: missing txID".to_string(),
+            )
+        })?;
+
+    if !tx_id.eq_ignore_ascii_case(expected_hash) {
+        return Err(crate::Error::RpcNode(format!(
+            "TRON pending transaction hash mismatch: expected {expected_hash}, got {tx_id}"
+        )));
+    }
+
+    Ok(true)
+}
+
 pub struct Provider {
     client: HttpClient,
 }
@@ -205,20 +237,11 @@ impl Provider {
     // 查询 pending pool 里的交易是否存在
     pub async fn has_pending_tx(&self, tx_hash: &str) -> crate::Result<bool> {
         let params = HashMap::from([("value", tx_hash)]);
-        match self
+        let response = self
             .do_request::<_, serde_json::Value>("wallet/gettransactionfrompending", Some(params))
-            .await
-        {
-            Ok(_) => Ok(true),
-            Err(err) => {
-                tracing::warn!(
-                    "query tron pending transaction {} error: {:?}",
-                    tx_hash,
-                    err
-                );
-                Ok(false)
-            }
-        }
+            .await?;
+
+        parse_pending_tx_response(tx_hash, &response)
     }
 
     // exec raw transaction
@@ -340,6 +363,41 @@ impl Provider {
 
         let raw_data_len = (raw_data_hex.len() / 2) as i64;
         raw_data_len + data_hex_pro + result_hex + sign_len
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_pending_tx_response;
+    use serde_json::json;
+
+    #[test]
+    fn matching_pending_tx_response_is_true() {
+        let response = json!({
+            "txID": "abc123",
+            "raw_data": { "contract": [] }
+        });
+
+        assert!(parse_pending_tx_response("abc123", &response).unwrap());
+    }
+
+    #[test]
+    fn empty_pending_tx_response_is_false() {
+        assert!(!parse_pending_tx_response("abc123", &json!({})).unwrap());
+    }
+
+    #[test]
+    fn malformed_pending_tx_response_is_error() {
+        let response = json!({ "Error": "pending lookup failed" });
+
+        assert!(parse_pending_tx_response("abc123", &response).is_err());
+    }
+
+    #[test]
+    fn mismatched_pending_tx_response_is_error() {
+        let response = json!({ "txID": "different" });
+
+        assert!(parse_pending_tx_response("abc123", &response).is_err());
     }
 }
 
