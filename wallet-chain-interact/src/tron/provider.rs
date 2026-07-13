@@ -241,6 +241,12 @@ impl Provider {
             .do_request::<_, serde_json::Value>("wallet/gettransactionfrompending", Some(params))
             .await?;
 
+        tracing::info!(
+            tx_hash,
+            response_body = %response,
+            "TRON pending pool RPC response"
+        );
+
         parse_pending_tx_response(tx_hash, &response)
     }
 
