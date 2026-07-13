@@ -79,7 +79,10 @@ mod tests {
     fn exact_query_phrase_is_case_insensitive_and_returns_none_for_unknown_word() {
         let wordlist = WordlistWrapper::new(1).expect("english wordlist should be available");
 
-        assert_eq!(wordlist.exact_query_phrase("ABANDON"), Some("abandon".to_string()));
+        assert_eq!(
+            wordlist.exact_query_phrase("ABANDON"),
+            Some("abandon".to_string())
+        );
         assert_eq!(wordlist.exact_query_phrase("not_a_bip39_word"), None);
     }
 }
