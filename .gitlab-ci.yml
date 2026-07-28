@@ -1,0 +1,15 @@
+#ai review程序，勿动
+stages:
+  - review
+
+ai_code_review:
+  stage: review
+
+  rules:
+    - when: always
+
+  tags:
+    - ai-review
+
+  script:
+    - python3 .ai-review.py
