@@ -18,10 +18,7 @@ use sol::SolanaInstance;
 use sui::SuiInstance;
 use ton::{TonInstance, TonKeyPair};
 use trx::TronInstance;
-use wallet_core::{
-    KeyPair,
-    derive::{Derive, GenDerivation, GenDerivationDog, GenDerivationLtc},
-};
+use wallet_core::derive::{Derive, GenDerivation, GenDerivationDog, GenDerivationLtc};
 
 use wallet_types::chain::{address::r#type::AddressType, chain, network};
 
@@ -158,11 +155,12 @@ impl ChainObject {
 
             ChainObject::Ton(instance) => {
                 let derivation_path = TonInstance::generate(&None, input_index)?;
-                let res = TonKeyPair::generate_with_derivation(
+                let res = TonKeyPair::generate_with_derivation_and_address_type(
                     seed.to_vec(),
                     &derivation_path,
                     &instance.chain_code,
                     instance.network,
+                    instance.address_type,
                 )?;
 
                 Ok(Box::new(res))
@@ -218,11 +216,12 @@ impl ChainObject {
                 Ok(res)
             }
             ChainObject::Ton(instance) => {
-                let res = TonKeyPair::generate_with_derivation(
+                let res = TonKeyPair::generate_with_derivation_and_address_type(
                     seed.to_vec(),
                     derivation_path,
                     &instance.chain_code,
                     instance.network,
+                    instance.address_type,
                 )?;
 
                 Ok(Box::new(res))
@@ -352,8 +351,44 @@ impl TryFrom<(&ChainCode, &AddressType, network::NetworkKind)> for ChainObject {
 #[cfg(test)]
 mod test {
     use super::ChainObject;
-    use wallet_core::{language::Language, xpriv};
-    use wallet_types::chain::{address::r#type::DOG_ADDRESS_TYPES, chain::ChainCode, network};
+    use crate::instance::ton::TonInstance;
+    use wallet_core::{derive::GenDerivation, language::Language, xpriv};
+    use wallet_types::chain::{
+        address::r#type::DOG_ADDRESS_TYPES,
+        chain::ChainCode,
+        network::{self, NetworkKind},
+    };
+
+    #[test]
+    fn test_ton_chain_object_respects_address_type_for_all_derivation_entrypoints() {
+        let seed = [7u8; 64];
+        let v4 = ChainObject::new("ton", Some("v4r2".to_string()), NetworkKind::Mainnet).unwrap();
+        let v5 = ChainObject::new("ton", Some("v5r1".to_string()), NetworkKind::Mainnet).unwrap();
+
+        let v4_index_address = v4
+            .gen_keypair_with_index_address_type(&seed, 0)
+            .unwrap()
+            .address();
+        let v5_index_address = v5
+            .gen_keypair_with_index_address_type(&seed, 0)
+            .unwrap()
+            .address();
+        assert_ne!(v4_index_address, v5_index_address);
+
+        let derivation_path = TonInstance::generate(&None, 0).unwrap();
+        assert_eq!(
+            v4.gen_keypair_with_derivation_path(&seed, &derivation_path)
+                .unwrap()
+                .address(),
+            v4_index_address
+        );
+        assert_eq!(
+            v5.gen_keypair_with_derivation_path(&seed, &derivation_path)
+                .unwrap()
+                .address(),
+            v5_index_address
+        );
+    }
 
     #[test]
     fn test_gen() {

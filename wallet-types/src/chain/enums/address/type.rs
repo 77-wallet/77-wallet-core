@@ -39,15 +39,25 @@ pub enum AddressType {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, Copy)]
 pub enum TonAddressType {
-    V5R1,
+    V2R1,
+    V2R2,
+    V3R1,
+    V3R2,
+    V4R1,
     V4R2,
+    V5R1,
 }
 
 impl TonAddressType {
     pub fn to_version(&self) -> WalletVersion {
         match self {
-            TonAddressType::V5R1 => WalletVersion::V5R1,
-            TonAddressType::V4R2 => WalletVersion::V4R2,
+            Self::V2R1 => WalletVersion::V2R1,
+            Self::V2R2 => WalletVersion::V2R2,
+            Self::V3R1 => WalletVersion::V3R1,
+            Self::V3R2 => WalletVersion::V3R2,
+            Self::V4R1 => WalletVersion::V4R1,
+            Self::V4R2 => WalletVersion::V4R2,
+            Self::V5R1 => WalletVersion::V5R1,
         }
     }
 }
@@ -55,9 +65,19 @@ impl TonAddressType {
 impl TryFrom<&str> for TonAddressType {
     type Error = crate::Error;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(match value {
-            "v5r1" => TonAddressType::V5R1,
-            "v4r2" => TonAddressType::V4R2,
+        let normalized = value.to_ascii_lowercase();
+        let normalized = normalized
+            .strip_prefix("wallet_")
+            .unwrap_or(normalized.as_str());
+
+        Ok(match normalized {
+            "v2r1" => Self::V2R1,
+            "v2r2" => Self::V2R2,
+            "v3r1" => Self::V3R1,
+            "v3r2" => Self::V3R2,
+            "v4r1" => Self::V4R1,
+            "v4r2" => Self::V4R2,
+            "v5r1" => Self::V5R1,
             _ => return Err(crate::Error::TonAddressTypeInvalid(value.to_string())),
         })
     }
@@ -168,8 +188,13 @@ impl AsRef<str> for DogAddressType {
 impl AsRef<str> for TonAddressType {
     fn as_ref(&self) -> &str {
         match self {
-            TonAddressType::V4R2 => "v4r2",
-            TonAddressType::V5R1 => "v5r1",
+            Self::V2R1 => "v2r1",
+            Self::V2R2 => "v2r2",
+            Self::V3R1 => "v3r1",
+            Self::V3R2 => "v3r2",
+            Self::V4R1 => "v4r1",
+            Self::V4R2 => "v4r2",
+            Self::V5R1 => "v5r1",
         }
     }
 }
@@ -380,6 +405,55 @@ impl TryFrom<&str> for DogAddressType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TON_ADDRESS_TYPE_CASES: [(&str, TonAddressType, WalletVersion); 7] = [
+        ("v2r1", TonAddressType::V2R1, WalletVersion::V2R1),
+        ("v2r2", TonAddressType::V2R2, WalletVersion::V2R2),
+        ("v3r1", TonAddressType::V3R1, WalletVersion::V3R1),
+        ("v3r2", TonAddressType::V3R2, WalletVersion::V3R2),
+        ("v4r1", TonAddressType::V4R1, WalletVersion::V4R1),
+        ("v4r2", TonAddressType::V4R2, WalletVersion::V4R2),
+        ("v5r1", TonAddressType::V5R1, WalletVersion::V5R1),
+    ];
+
+    #[test]
+    fn test_ton_address_types_parse_display_and_map_versions() {
+        for (name, address_type, wallet_version) in TON_ADDRESS_TYPE_CASES {
+            assert_eq!(TonAddressType::try_from(name).unwrap(), address_type);
+            assert_eq!(
+                TonAddressType::try_from(format!("wallet_{name}").as_str()).unwrap(),
+                address_type
+            );
+            assert_eq!(address_type.as_ref(), name);
+            assert_eq!(address_type.to_string(), name);
+            assert_eq!(address_type.to_version(), wallet_version);
+        }
+
+        assert_eq!(
+            TonAddressType::try_from("WALLET_V3R2").unwrap(),
+            TonAddressType::V3R2
+        );
+    }
+
+    #[test]
+    fn test_ton_address_type_rejects_invalid_value() {
+        assert!(matches!(
+            TonAddressType::try_from("wallet_v1r1"),
+            Err(crate::Error::TonAddressTypeInvalid(value)) if value == "wallet_v1r1"
+        ));
+    }
+
+    #[test]
+    fn test_existing_ton_address_type_serde_format_is_unchanged() {
+        assert_eq!(
+            serde_json::to_string(&TonAddressType::V4R2).unwrap(),
+            "\"V4R2\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TonAddressType::V5R1).unwrap(),
+            "\"V5R1\""
+        );
+    }
 
     #[test]
     fn test_address_type_from_str() {
