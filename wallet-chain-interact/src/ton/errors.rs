@@ -16,6 +16,16 @@ pub enum TonError {
     TonNodeError(#[from] wallet_transport::errors::TransportError),
     #[error("{0}")]
     NotTokenParse(String),
+    #[error(
+        "invalid NFT transfer amount: attached nanotons {attached}, forward nanotons {forward}"
+    )]
+    InvalidNftAmount { attached: String, forward: String },
+    #[error("invalid TON wallet message count: actual {actual}, maximum {max}")]
+    InvalidMessageCount { actual: usize, max: usize },
+    #[error("TON wallet message/mode count mismatch: messages {messages}, modes {modes}")]
+    MessageModeCountMismatch { messages: usize, modes: usize },
+    #[error("NFT query ID overflow: base {base}, item index {index}")]
+    QueryIdOverflow { base: u64, index: usize },
 }
 
 impl RetryableError for TonError {

@@ -4,7 +4,10 @@ use serde::Deserialize;
 use tonlib_core::{
     TonAddress,
     cell::{BagOfCells, Cell, EMPTY_ARC_CELL, EitherCellLayout},
-    message::{HasOpcode as _, JettonTransferMessage},
+    message::{
+        HasOpcode as _, JettonTransferMessage, NftOwnershipAssignedMessage, NftTransferMessage,
+        TonMessage as _,
+    },
     tlb_types::tlb::TLB as _,
 };
 pub trait GetAddress {
@@ -80,6 +83,10 @@ pub struct RawMessage<T: std::fmt::Debug> {
 pub enum TxTypes {
     // 代币交易
     JettonTrans,
+    // NFT Item 转账
+    NftTrans,
+    // NFT Item 已向新 owner 发送所有权变更确认
+    NftOwnershipAssigned,
     // 普通交易
     Trans,
     // other 交易 目前未识别的交易类型
@@ -111,6 +118,10 @@ impl<T: std::fmt::Debug> RawMessage<T> {
                     match op_code {
                         // Jetton Transfer
                         0x0f8a7ea5 => Ok(TxTypes::JettonTrans),
+                        // NFT Item Transfer (TEP-62)
+                        0x5fcc3d14 => Ok(TxTypes::NftTrans),
+                        // NFT ownership assigned notification (TEP-62)
+                        0x05138d91 => Ok(TxTypes::NftOwnershipAssigned),
                         // Jetton Internal Transfer
                         0x178d4519 => Ok(TxTypes::Other),
                         // Jetton Transfer Notification
@@ -144,6 +155,54 @@ impl<T: std::fmt::Debug> RawMessage<T> {
                 Ok(parse_jetton_message(&cell)?)
             }
             _ => Err(TonError::NotTokenParse("text raw_data ".to_string()))?,
+        }
+    }
+
+    pub fn parse_nft_transfer(&self) -> crate::Result<NftTransferMessage> {
+        match &self.msg_data {
+            MsgData::Raw {
+                body,
+                init_state: _,
+            } => {
+                let bag = BagOfCells::parse_base64(body).map_err(TonError::CellBuild)?;
+                let cell = bag
+                    .single_root()
+                    .map_err(TonError::CellBuild)?
+                    .to_cell()
+                    .map_err(TonError::CellBuild)?;
+
+                NftTransferMessage::parse(&cell)
+                    .map_err(TonError::TonMsg)
+                    .map_err(crate::Error::from)
+            }
+            _ => Err(TonError::NotTokenParse(
+                "NFT transfer requires raw message data".to_string(),
+            ))
+            .map_err(crate::Error::from),
+        }
+    }
+
+    pub fn parse_nft_ownership_assigned(&self) -> crate::Result<NftOwnershipAssignedMessage> {
+        match &self.msg_data {
+            MsgData::Raw {
+                body,
+                init_state: _,
+            } => {
+                let bag = BagOfCells::parse_base64(body).map_err(TonError::CellBuild)?;
+                let cell = bag
+                    .single_root()
+                    .map_err(TonError::CellBuild)?
+                    .to_cell()
+                    .map_err(TonError::CellBuild)?;
+
+                NftOwnershipAssignedMessage::parse(&cell)
+                    .map_err(TonError::TonMsg)
+                    .map_err(crate::Error::from)
+            }
+            _ => Err(TonError::NotTokenParse(
+                "NFT ownership assignment requires raw message data".to_string(),
+            ))
+            .map_err(crate::Error::from),
         }
     }
 
@@ -274,6 +333,95 @@ fn parse_jetton_message(cell: &Cell) -> Result<JettonTransferMessage, TonError> 
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::sync::Arc;
+    use tonlib_core::{
+        cell::EitherCellLayout,
+        message::{NftOwnershipAssignedMessage, NftTransferMessage},
+    };
+
+    #[test]
+    fn nft_ownership_assigned_is_recognized_and_parsed() {
+        let prev_owner = TonAddress::from_hex_str(
+            "0:286d2c92da998c4fcf82d274257cfa3d0a52bd412ce83dee64a404a7ceaabf31",
+        )
+        .unwrap();
+        let body = NftOwnershipAssignedMessage {
+            query_id: 42,
+            prev_owner: prev_owner.clone(),
+            forward_payload: Arc::new(Cell::default()),
+            forward_payload_layout: EitherCellLayout::Native,
+        }
+        .build()
+        .unwrap();
+        let body = BagOfCells::from_root(body).serialize(false).unwrap();
+        let raw = RawMessage {
+            type_field: "raw.message".to_string(),
+            hash: "test-hash".to_string(),
+            source: "nft-item".to_string(),
+            destination: "new-owner".to_string(),
+            value: "1".to_string(),
+            fwd_fee: "0".to_string(),
+            ihr_fee: "0".to_string(),
+            created_lt: "0".to_string(),
+            body_hash: "body-hash".to_string(),
+            msg_data: MsgData::Raw {
+                body: wallet_utils::bytes_to_base64(&body),
+                init_state: String::new(),
+            },
+            message: None,
+        };
+
+        assert!(matches!(raw.is_token(), Ok(TxTypes::NftOwnershipAssigned)));
+        let parsed = raw.parse_nft_ownership_assigned().unwrap();
+        assert_eq!(parsed.query_id, 42);
+        assert_eq!(parsed.prev_owner, prev_owner);
+    }
+
+    #[test]
+    fn nft_transfer_is_recognized_and_parsed() {
+        let new_owner = TonAddress::from_hex_str(
+            "0:71055783d6928e8c007f22f1d799a3b4dbd9034e9d5975364f707b9efe839510",
+        )
+        .unwrap();
+        let response_destination = TonAddress::from_hex_str(
+            "0:286d2c92da998c4fcf82d274257cfa3d0a52bd412ce83dee64a404a7ceaabf31",
+        )
+        .unwrap();
+        let body = NftTransferMessage {
+            query_id: 42,
+            new_owner: new_owner.clone(),
+            response_destination: response_destination.clone(),
+            custom_payload: None,
+            forward_ton_amount: BigUint::from(1u8),
+            forward_payload: Arc::new(Cell::default()),
+            forward_payload_layout: EitherCellLayout::Native,
+        }
+        .build()
+        .unwrap();
+        let body = BagOfCells::from_root(body).serialize(false).unwrap();
+        let raw = RawMessage {
+            type_field: "raw.message".to_string(),
+            hash: "test-hash".to_string(),
+            source: "source".to_string(),
+            destination: "nft-item".to_string(),
+            value: "50000000".to_string(),
+            fwd_fee: "0".to_string(),
+            ihr_fee: "0".to_string(),
+            created_lt: "0".to_string(),
+            body_hash: "body-hash".to_string(),
+            msg_data: MsgData::Raw {
+                body: wallet_utils::bytes_to_base64(&body),
+                init_state: String::new(),
+            },
+            message: None,
+        };
+
+        assert!(matches!(raw.is_token(), Ok(TxTypes::NftTrans)));
+        let parsed = raw.parse_nft_transfer().unwrap();
+        assert_eq!(parsed.query_id, 42);
+        assert_eq!(parsed.new_owner, new_owner);
+        assert_eq!(parsed.response_destination, response_destination);
+    }
 
     #[test]
     fn test_paras() {
