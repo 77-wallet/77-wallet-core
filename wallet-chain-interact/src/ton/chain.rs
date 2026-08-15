@@ -14,19 +14,49 @@ use alloy::primitives::U256;
 use tonlib_core::{
     cell::{BagOfCells, Cell},
     tlb_types::tlb::TLB as _,
-    wallet::{
-        ton_wallet::TonWallet, version_helper::VersionHelper, versioned::DEFAULT_WALLET_ID,
-        wallet_version::WalletVersion,
-    },
+    wallet::{ton_wallet::TonWallet, version_helper::VersionHelper},
 };
 use wallet_types::chain::address::r#type::TonAddressType;
 
 pub struct TonChain {
     pub provider: Provider,
 }
+
+fn wallet_init_data(wallet: &TonWallet) -> Result<Cell, TonError> {
+    VersionHelper::get_data(wallet.version, &wallet.key_pair, wallet.wallet_id)
+        .map_err(TonError::CellBuild)
+}
 impl TonChain {
     pub fn new(provider: Provider) -> crate::Result<Self> {
         Ok(Self { provider })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wallet_init_data;
+    use tonlib_core::{
+        tlb_types::tlb::TLB,
+        wallet::{
+            mnemonic::KeyPair,
+            ton_wallet::TonWallet,
+            versioned::{DEFAULT_WALLET_ID_V5R1, v5::WalletDataV5},
+            wallet_version::WalletVersion,
+        },
+    };
+
+    #[test]
+    fn test_v5_wallet_init_data_uses_v5_wallet_id() {
+        let key_pair = KeyPair {
+            public_key: vec![0; 32],
+            secret_key: vec![0; 64],
+        };
+        let wallet = TonWallet::new(WalletVersion::V5R1, key_pair).unwrap();
+        let data = wallet_init_data(&wallet).unwrap();
+        let data = WalletDataV5::from_cell(&data).unwrap();
+
+        assert_eq!(wallet.wallet_id, DEFAULT_WALLET_ID_V5R1);
+        assert_eq!(data.wallet_id, DEFAULT_WALLET_ID_V5R1);
     }
 }
 
@@ -76,8 +106,7 @@ impl TonChain {
             let code = VersionHelper::get_code(version)
                 .map_err(TonError::CellBuild)?
                 .clone();
-            let data = VersionHelper::get_data(version, &key_pair, DEFAULT_WALLET_ID)
-                .map_err(TonError::CellBuild)?;
+            let data = wallet_init_data(&wallet)?;
 
             params.init_code = Some(code.to_boc_b64(true).map_err(TonError::CellBuild)?);
             params.init_data = Some(data.to_boc_b64(true).map_err(TonError::CellBuild)?);
@@ -95,10 +124,7 @@ impl TonChain {
     ) -> crate::Result<String> {
         let key_pair = get_keypair(key)?;
 
-        let version = match address_type {
-            TonAddressType::V4R2 => WalletVersion::V4R2,
-            TonAddressType::V5R1 => WalletVersion::V5R1,
-        };
+        let version = address_type.to_version();
         let wallet = TonWallet::new(version, key_pair).map_err(TonError::CellBuild)?;
 
         // 知道钱包的状态,决定是否部署钱包
