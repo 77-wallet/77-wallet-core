@@ -34,7 +34,14 @@ pub trait BuildInternalMsg {
         seqno: u32,
         spend_all: bool,
     ) -> crate::Result<Cell> {
-        let msg_mode = if spend_all { 144 } else { 3 };
+        let msg_mode = if spend_all {
+            match address_type {
+                TonAddressType::V5R1 => 130,
+                _ => 144,
+            }
+        } else {
+            3
+        };
         self.build_ext_msgs(vec![trans], vec![msg_mode], address_type, now_time, seqno)
     }
 
