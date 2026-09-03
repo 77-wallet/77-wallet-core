@@ -129,6 +129,26 @@ impl RawTransactionParams {
         let bytes = wallet_utils::hex_func::bin_encode_bytes(self)?;
         Ok(wallet_utils::bytes_to_base64(&bytes))
     }
+
+    pub fn set_expiration_from_timestamp(mut self, expiration_secs: u64) -> crate::Result<Self> {
+        let mut raw_data =
+            serde_func::serde_from_str::<RawData<serde_json::Value>>(&self.raw_data)?;
+        let new_time = raw_data
+            .timestamp
+            .saturating_add(expiration_secs.saturating_mul(1000));
+        raw_data.expiration = new_time;
+
+        let mut raw = Raw::from_str(&self.raw_data_hex)?;
+        raw.expiration = new_time as i64;
+        let bytes = raw.to_bytes()?;
+
+        self.tx_id = Raw::tx_id(&bytes);
+        self.raw_data_hex = Raw::raw_data_hex(&bytes);
+        self.raw_data = raw_data.to_json_string()?;
+        self.signature.clear();
+
+        Ok(self)
+    }
 }
 
 impl<T: serde::Serialize> From<TronTransactionResponse<T>> for RawTransactionParams {
@@ -147,4 +167,52 @@ pub struct RawTransactionResp {
     pub result: bool,
     #[serde(rename = "txid")]
     pub tx_id: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Raw, RawData, RawTransactionParams};
+
+    fn raw_params(timestamp: u64, expiration: u64) -> RawTransactionParams {
+        let mut raw = Raw::new();
+        raw.timestamp = timestamp as i64;
+        raw.expiration = expiration as i64;
+        let bytes = raw.to_bytes().expect("encode raw");
+
+        let raw_data = RawData::<serde_json::Value> {
+            contract: vec![],
+            ref_block_bytes: "0000".to_string(),
+            ref_block_hash: "0000000000000000".to_string(),
+            expiration,
+            fee_limit: None,
+            data: None,
+            timestamp,
+        };
+
+        RawTransactionParams {
+            tx_id: Raw::tx_id(&bytes),
+            raw_data: raw_data.to_json_string().expect("serialize raw_data"),
+            raw_data_hex: Raw::raw_data_hex(&bytes),
+            signature: vec!["stale-signature".to_string()],
+        }
+    }
+
+    #[test]
+    fn raw_transaction_set_expiration_from_timestamp_updates_all_raw_facts() {
+        let original = raw_params(1_000, 2_000);
+        let original_tx_id = original.tx_id.clone();
+
+        let adjusted = original
+            .set_expiration_from_timestamp(180)
+            .expect("set expiration");
+
+        let raw_data: RawData<serde_json::Value> =
+            wallet_utils::serde_func::serde_from_str(&adjusted.raw_data).expect("raw_data json");
+        let protobuf_raw = Raw::from_str(&adjusted.raw_data_hex).expect("protobuf raw");
+
+        assert_eq!(raw_data.expiration, 181_000);
+        assert_eq!(protobuf_raw.expiration, 181_000);
+        assert_ne!(adjusted.tx_id, original_tx_id);
+        assert!(adjusted.signature.is_empty());
+    }
 }
