@@ -29,6 +29,23 @@ impl EthChain {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::EthChain;
+    use crate::eth::provider::Provider;
+    use wallet_transport::client::RpcClient;
+    use wallet_types::chain::{chain::ChainCode, network::NetworkKind};
+
+    #[test]
+    fn evm_chain_preserves_new_chain_identity() {
+        let client = RpcClient::new("http://127.0.0.1:1", None, None).unwrap();
+        let provider = Provider::new(client).unwrap();
+        let chain = EthChain::new(provider, NetworkKind::Mainnet, ChainCode::Base).unwrap();
+
+        assert_eq!(chain.chain_code, ChainCode::Base);
+    }
+}
+
 impl EthChain {
     pub async fn balance(&self, addr: &str, token: Option<String>) -> crate::Result<U256> {
         if let Some(t) = token
