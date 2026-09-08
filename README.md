@@ -45,14 +45,10 @@ The workspace currently contains code for:
 - Ton
 
 EVM chain codes are `eth`, `bnb`, `polygon`, `avalanche`, `fantom`,
-`arbitrum`, `base`, and `scroll`. Parsing accepts these exact codes; aliases
-such as `matic`, `avax`, `ftm`, and `arb` are rejected.
-
-The six additional chains reuse `ChainObject::Eth(EthereumInstance)` while
-preserving their own `ChainCode` and the existing Ethereum derivation path.
-Ethereum retains `ChainObject::Eth`, BNB retains `ChainObject::Bnb`, and
-`Address::BnbAddress` remains available to callers. EVM transaction signing
-fetches the chain ID dynamically via RPC `eth_chainId`.
+`arbitrum`, `base`, and `scroll`. These chains share
+`ChainObject::Evm(EthereumInstance)` and the Ethereum derivation path while
+retaining their own `ChainCode`. EVM transaction signing obtains the chain ID
+dynamically through RPC `eth_chainId`.
 
 ## What This Repository Provides
 
