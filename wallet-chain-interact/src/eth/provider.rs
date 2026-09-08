@@ -155,7 +155,19 @@ impl Provider {
         let chain_id = self.chain_id().await?;
         let tx = tx.with_nonce(n).with_chain_id(chain_id);
 
-        let (tx_encoded, _) = Self::sign_transaction(tx, key).await?;
+        // 签名交易
+        let signer: alloy::signers::local::PrivateKeySigner = key
+            .parse()
+            .map_err(|_| crate::Error::SignError("get singer from key error".to_string()))?;
+        let wallet = alloy::network::EthereumWallet::from(signer);
+
+        let tx_envelope = tx
+            .build(&wallet)
+            .await
+            .map_err(|e| crate::Error::SignError(e.to_string()))?;
+        tx_envelope.encoded_2718();
+        let tx_encoded = tx_envelope.encoded_2718();
+
         let hex_raw = format!("0x{}", hex::encode(tx_encoded));
         let params = JsonRpcParams::default()
             .method("eth_sendRawTransaction")

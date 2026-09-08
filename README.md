@@ -33,10 +33,26 @@ The workspace currently contains code for:
 - Dogecoin
 - Ethereum
 - BNB Smart Chain
+- Polygon
+- Avalanche
+- Fantom
+- Arbitrum
+- Base
+- Scroll
 - Solana
 - Sui
 - Tron
 - Ton
+
+EVM chain codes are `eth`, `bnb`, `polygon`, `avalanche`, `fantom`,
+`arbitrum`, `base`, and `scroll`. Parsing accepts these exact codes; aliases
+such as `matic`, `avax`, `ftm`, and `arb` are rejected.
+
+The six additional chains reuse `ChainObject::Eth(EthereumInstance)` while
+preserving their own `ChainCode` and the existing Ethereum derivation path.
+Ethereum retains `ChainObject::Eth`, BNB retains `ChainObject::Bnb`, and
+`Address::BnbAddress` remains available to callers. EVM transaction signing
+fetches the chain ID dynamically via RPC `eth_chainId`.
 
 ## What This Repository Provides
 

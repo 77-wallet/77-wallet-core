@@ -30,6 +30,7 @@ pub enum Address {
     DogAddress(String),
     SolAddress(solana_sdk::pubkey::Pubkey),
     TrxAddress(anychain_tron::TronAddress),
+    BnbAddress(alloy::primitives::Address),
     SuiAddress(String),
 }
 
@@ -42,6 +43,7 @@ impl Display for Address {
             Address::DogAddress(address) => write!(f, "{}", address),
             Address::SolAddress(address) => write!(f, "{}", address),
             Address::TrxAddress(address) => write!(f, "{}", address.to_base58()),
+            Address::BnbAddress(address) => write!(f, "{}", address),
             Address::SuiAddress(address) => write!(f, "{}", address),
         }
     }
@@ -49,9 +51,10 @@ impl Display for Address {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ChainObject {
-    Evm(crate::instance::eth::EthereumInstance),
+    Eth(crate::instance::eth::EthereumInstance),
     Trx(crate::instance::trx::TronInstance),
     Sol(crate::instance::sol::SolanaInstance),
+    Bnb(crate::instance::eth::EthereumInstance),
     Btc(crate::instance::btc::BitcoinInstance),
     Ltc(crate::instance::ltc::LitecoinInstance),
     Dog(crate::instance::dog::DogcoinInstance),
@@ -72,9 +75,10 @@ impl ChainObject {
 
     pub fn chain_code(&self) -> &ChainCode {
         match self {
-            ChainObject::Evm(i) => &i.chain_code,
+            ChainObject::Eth(i) => &i.chain_code,
             ChainObject::Trx(i) => &i.chain_code,
             ChainObject::Sol(i) => &i.chain_code,
+            ChainObject::Bnb(i) => &i.chain_code,
             ChainObject::Btc(i) => &i.chain_code,
             ChainObject::Ltc(i) => &i.chain_code,
             ChainObject::Dog(i) => &i.chain_code,
@@ -85,9 +89,10 @@ impl ChainObject {
 
     pub fn address_type(&self) -> AddressType {
         match self {
-            ChainObject::Evm(_)
+            ChainObject::Eth(_)
             | ChainObject::Trx(_)
             | ChainObject::Sol(_)
+            | ChainObject::Bnb(_)
             | ChainObject::Sui(_) => AddressType::Other,
             ChainObject::Btc(i) => AddressType::Btc(i.address_type),
             ChainObject::Ltc(i) => AddressType::Ltc(i.address_type),
@@ -102,7 +107,7 @@ impl ChainObject {
         input_index: i32,
     ) -> Result<Box<dyn wallet_core::KeyPair<Error = crate::Error>>, crate::Error> {
         match self {
-            ChainObject::Evm(i) => {
+            ChainObject::Eth(i) => {
                 let derivation_path = EthereumInstance::generate(&None, input_index)?;
                 let res = i.derive_with_derivation_path(seed.to_vec(), &derivation_path)?;
                 let res = Box::new(res);
@@ -116,6 +121,12 @@ impl ChainObject {
             }
             ChainObject::Sol(i) => {
                 let derivation_path = SolanaInstance::generate(&None, input_index)?;
+                let res = i.derive_with_derivation_path(seed.to_vec(), &derivation_path)?;
+                let res = Box::new(res);
+                Ok(res)
+            }
+            ChainObject::Bnb(i) => {
+                let derivation_path = EthereumInstance::generate(&None, input_index)?;
                 let res = i.derive_with_derivation_path(seed.to_vec(), &derivation_path)?;
                 let res = Box::new(res);
                 Ok(res)
@@ -169,7 +180,7 @@ impl ChainObject {
         derivation_path: &str,
     ) -> Result<Box<dyn wallet_core::KeyPair<Error = crate::Error>>, crate::Error> {
         match self {
-            ChainObject::Evm(i) => {
+            ChainObject::Eth(i) => {
                 let res = i.derive_with_derivation_path(seed.to_vec(), derivation_path)?;
                 let res = Box::new(res);
                 Ok(res)
@@ -180,6 +191,11 @@ impl ChainObject {
                 Ok(res)
             }
             ChainObject::Sol(i) => {
+                let res = i.derive_with_derivation_path(seed.to_vec(), derivation_path)?;
+                let res = Box::new(res);
+                Ok(res)
+            }
+            ChainObject::Bnb(i) => {
                 let res = i.derive_with_derivation_path(seed.to_vec(), derivation_path)?;
                 let res = Box::new(res);
                 Ok(res)
@@ -230,11 +246,14 @@ impl ChainObject {
         crate::Error,
     > {
         Ok(match self {
-            ChainObject::Evm(i) => Box::new(crate::instance::eth::address::EthGenAddress::new(
+            ChainObject::Eth(i) => Box::new(crate::instance::eth::address::EthGenAddress::new(
                 i.chain_code,
             )),
             ChainObject::Trx(_) => Box::new(crate::instance::trx::address::TrxGenAddress {}),
             ChainObject::Sol(_) => Box::new(crate::instance::sol::address::SolGenAddress {}),
+            ChainObject::Bnb(_) => Box::new(crate::instance::eth::address::EthGenAddress::new(
+                chain::ChainCode::BnbSmartChain,
+            )),
             ChainObject::Btc(i) => Box::new(crate::instance::btc::address::BtcGenAddress {
                 address_type: i.address_type,
                 network: i.network,
@@ -261,13 +280,12 @@ impl TryFrom<(&ChainCode, &AddressType, network::NetworkKind)> for ChainObject {
     ) -> Result<Self, Self::Error> {
         let res = match value {
             ChainCode::Ethereum
-            | ChainCode::BnbSmartChain
             | ChainCode::Polygon
             | ChainCode::Avalanche
             | ChainCode::Fantom
             | ChainCode::Arbitrum
             | ChainCode::Base
-            | ChainCode::Scroll => ChainObject::Evm(crate::instance::eth::EthereumInstance {
+            | ChainCode::Scroll => ChainObject::Eth(crate::instance::eth::EthereumInstance {
                 chain_code: value.to_owned(),
                 network,
             }),
@@ -276,6 +294,10 @@ impl TryFrom<(&ChainCode, &AddressType, network::NetworkKind)> for ChainObject {
                 network,
             }),
             ChainCode::Solana => ChainObject::Sol(crate::instance::sol::SolanaInstance {
+                chain_code: value.to_owned(),
+                network,
+            }),
+            ChainCode::BnbSmartChain => ChainObject::Bnb(crate::instance::eth::EthereumInstance {
                 chain_code: value.to_owned(),
                 network,
             }),
@@ -374,7 +396,7 @@ mod test {
             let instance: ChainObject = (&chain, &AddressType::Other, NetworkKind::Mainnet)
                 .try_into()
                 .unwrap();
-            assert!(matches!(&instance, ChainObject::Evm(_)));
+            assert!(matches!(&instance, ChainObject::Eth(_)));
             assert_eq!(instance.chain_code(), &chain);
 
             let keypair = instance
@@ -402,7 +424,11 @@ mod test {
             let instance: ChainObject = (&chain, &AddressType::Other, NetworkKind::Mainnet)
                 .try_into()
                 .unwrap();
-            assert!(matches!(&instance, ChainObject::Evm(_)));
+            match chain {
+                ChainCode::Ethereum => assert!(matches!(&instance, ChainObject::Eth(_))),
+                ChainCode::BnbSmartChain => assert!(matches!(&instance, ChainObject::Bnb(_))),
+                _ => unreachable!(),
+            }
             assert_eq!(instance.chain_code(), &chain);
             assert_eq!(instance.gen_gen_address().unwrap().chain_code(), &chain);
         }
