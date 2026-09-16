@@ -7,3 +7,10 @@ wallet_data
 .DS_Store
 .trae
 PLANS.md
+# Keep the offline Solana metadata regression and its public mint fixture.
+!/wallet-chain-interact/tests/
+/wallet-chain-interact/tests/*
+!/wallet-chain-interact/tests/sol_metadata.rs
+!/wallet-chain-interact/tests/fixtures/
+/wallet-chain-interact/tests/fixtures/*
+!/wallet-chain-interact/tests/fixtures/usdg_mint.base64
