@@ -87,71 +87,112 @@ impl Provider {
     }
 
     pub async fn token_symbol(&self, mint: &str) -> crate::Result<String> {
-        let program_id =
-        // spl_associated_token_account::ID;
-            wallet_utils::address::parse_sol_address(super::operations::contract::META_PRAMS_ID)?;
-        let mint_pubkey = Pubkey::from_str(mint).map_err(|e| crate::Error::Other(e.to_string()))?;
-
-        // Derive the metadata PDA (Program Derived Address)
-        let metadata_pda = Pubkey::find_program_address(
-            &[b"metadata", program_id.as_ref(), mint_pubkey.as_ref()],
-            &program_id,
-        )
-        .0;
-        // Fetch account info of the metadata account
-        let account_info =
-            self.account_info(metadata_pda)
-                .await?
-                .value
-                .ok_or(crate::Error::Other(
-                    "Metadata account not found".to_string(),
-                ))?;
-
-        // Ensure the account has data
-        if account_info.data.is_empty() {
-            return Err(crate::Error::Other("Empty metadata account".to_string()));
-        }
-
-        let data = wallet_utils::base64_to_bytes(&account_info.data[0])?;
-
-        let metadata = mpl_token_metadata::accounts::Metadata::from_bytes(&data).unwrap();
-
-        // Return the symbol from the metadata
-        Ok(metadata.symbol)
+        Ok(self.token_metadata(mint).await?.1)
     }
 
     pub async fn token_name(&self, mint: &str) -> crate::Result<String> {
-        let program_id =
-            wallet_utils::address::parse_sol_address(super::operations::contract::META_PRAMS_ID)?;
-        let mint_pubkey = Pubkey::from_str(mint).map_err(|e| crate::Error::Other(e.to_string()))?;
+        Ok(self.token_metadata(mint).await?.0)
+    }
 
-        // Derive the metadata PDA (Program Derived Address)
+    /// Resolve (name, symbol) using the mint's metadata pointer when present.
+    /// Only absent extensions fall back to Metaplex; corrupt data and RPC
+    /// failures must remain errors rather than silently selecting other data.
+    async fn token_metadata(&self, mint: &str) -> crate::Result<(String, String)> {
+        use spl_token_2022::{
+            extension::{
+                BaseStateWithExtensions, ExtensionType, StateWithExtensions,
+                metadata_pointer::MetadataPointer,
+            },
+            state::Mint,
+        };
+        use spl_token_metadata_interface::state::TokenMetadata;
+
+        let mint = Pubkey::from_str(mint).map_err(|e| crate::Error::Other(e.to_string()))?;
+        let mint_account = self
+            .account_info(mint)
+            .await?
+            .value
+            .ok_or_else(|| crate::Error::Other(format!("mint account not found: {mint}")))?;
+        let token_program =
+            super::operations::token_program::token_program_id_from_owner(&mint_account.owner)?;
+        let mint_data = Self::metadata_account_data(&mint_account)?;
+        let state = StateWithExtensions::<Mint>::unpack(&mint_data)
+            .map_err(|e| crate::Error::Other(format!("Invalid mint account: {e}")))?;
+        let metadata_program =
+            wallet_utils::address::parse_sol_address(super::operations::contract::META_PRAMS_ID)?;
         let metadata_pda = Pubkey::find_program_address(
-            &[b"metadata", program_id.as_ref(), mint_pubkey.as_ref()],
-            &program_id,
+            &[b"metadata", metadata_program.as_ref(), mint.as_ref()],
+            &metadata_program,
         )
         .0;
 
-        // Fetch account info of the metadata account
-        let account_info =
-            self.account_info(metadata_pda)
-                .await?
-                .value
-                .ok_or(crate::Error::Other(
-                    "Metadata account not found".to_string(),
-                ))?;
-
-        // Ensure the account has data
-        if account_info.data.is_empty() {
-            return Err(crate::Error::Other("Empty metadata account".to_string()));
+        if token_program == spl_token_2022::id() {
+            let extensions = state
+                .get_extension_types()
+                .map_err(|e| crate::Error::Other(format!("Invalid mint extensions: {e}")))?;
+            if extensions.contains(&ExtensionType::MetadataPointer) {
+                let pointer = state
+                    .get_extension::<MetadataPointer>()
+                    .map_err(|e| crate::Error::Other(format!("Invalid metadata pointer: {e}")))?;
+                if let Some(address) = Option::<Pubkey>::from(pointer.metadata_address) {
+                    if address == mint {
+                        let metadata = state
+                            .get_variable_len_extension::<TokenMetadata>()
+                            .map_err(|e| {
+                                crate::Error::Other(format!("Invalid Token-2022 metadata: {e}"))
+                            })?;
+                        if metadata.mint != mint {
+                            return Err(crate::Error::Other(
+                                "Token-2022 metadata mint mismatch".into(),
+                            ));
+                        }
+                        return Ok((metadata.name, metadata.symbol));
+                    }
+                    // Metaplex accounts have a known owner, canonical address and
+                    // format. Other metadata programs need their own decoder.
+                    if address != metadata_pda {
+                        return Err(crate::Error::Other(format!(
+                            "Unsupported external metadata pointer: {address}"
+                        )));
+                    }
+                }
+            }
         }
 
-        // let decoded_data = wallet_utils::address::bs58_addr_to_hex_bytes(account_info.data)?;
-        let data = wallet_utils::base64_to_bytes(&account_info.data[0])?;
+        let account = self
+            .account_info(metadata_pda)
+            .await?
+            .value
+            .ok_or_else(|| crate::Error::Other("Metadata account not found".into()))?;
+        if account.owner != metadata_program.to_string() {
+            return Err(crate::Error::Other(
+                "Invalid Metaplex metadata owner".into(),
+            ));
+        }
+        let data = Self::metadata_account_data(&account)?;
+        let metadata = mpl_token_metadata::accounts::Metadata::from_bytes(&data)
+            .map_err(|e| crate::Error::Other(format!("Invalid Metaplex metadata: {e}")))?;
+        if metadata.key != mpl_token_metadata::types::Key::MetadataV1
+            || metadata.mint.to_bytes() != mint.to_bytes()
+        {
+            return Err(crate::Error::Other(
+                "Invalid Metaplex metadata type or mint".into(),
+            ));
+        }
+        Ok((metadata.name, metadata.symbol))
+    }
 
-        let metadata = mpl_token_metadata::accounts::Metadata::from_bytes(&data).unwrap();
-
-        Ok(metadata.name)
+    fn metadata_account_data(account: &AccountInfo) -> crate::Result<Vec<u8>> {
+        if account.data.get(1).map(String::as_str) != Some("base64") {
+            return Err(crate::Error::Other(
+                "Expected base64 metadata account data".into(),
+            ));
+        }
+        let encoded = account
+            .data
+            .first()
+            .ok_or_else(|| crate::Error::Other("Empty metadata account".into()))?;
+        Ok(wallet_utils::base64_to_bytes(encoded)?)
     }
 
     pub async fn get_transaction_index(&self, multisig_pda: &Pubkey) -> crate::Result<u64> {
@@ -571,7 +612,7 @@ impl Provider {
                 txid,
                 json!({
                     "encoding": "json",
-                    "maxSupportedTransactionVersion":0,
+                    "maxSupportedTransactionVersion":1,
                     "rewards": false,
                     commitment:commitment
                 }),
@@ -588,7 +629,7 @@ impl Provider {
             slot,
             json!({
                 "encoding": "json",
-                "maxSupportedTransactionVersion":0,
+                "maxSupportedTransactionVersion":1,
                 "rewards": false,
             }),
         ]);
