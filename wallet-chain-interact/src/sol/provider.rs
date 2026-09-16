@@ -612,7 +612,7 @@ impl Provider {
                 txid,
                 json!({
                     "encoding": "json",
-                    "maxSupportedTransactionVersion":0,
+                    "maxSupportedTransactionVersion":1,
                     "rewards": false,
                     commitment:commitment
                 }),
@@ -629,7 +629,7 @@ impl Provider {
             slot,
             json!({
                 "encoding": "json",
-                "maxSupportedTransactionVersion":0,
+                "maxSupportedTransactionVersion":1,
                 "rewards": false,
             }),
         ]);
