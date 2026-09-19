@@ -91,6 +91,21 @@ For chain-specific network work, the interaction layer follows the same
 pattern: create a provider, fetch the on-chain data you need, then build or
 sign the transaction with the chain-specific helper.
 
+## Solana token metadata
+
+Token name/symbol lookup supports legacy Metaplex metadata and Token-2022
+metadata stored in the mint (for example USDG). Token-2022 metadata pointers
+to the canonical Metaplex account are also supported. Other external metadata
+programs return an explicit unsupported-pointer error. Missing extensions may
+fall back to Metaplex; corrupt data and RPC failures are propagated as errors.
+Account ownership and metadata mint identity are checked before returning data.
+
+Run the offline regression suite with:
+
+```bash
+cargo test -p wallet-chain-interact --test sol_metadata
+```
+
 ## Current Caveats
 
 - The workspace uses nightly-only language features in some crates.
