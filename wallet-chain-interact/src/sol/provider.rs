@@ -462,6 +462,39 @@ impl Provider {
         json!(request)
     }
 
+    pub async fn black_address(&self, token: &str, owner: &str) -> crate::Result<bool> {
+        use super::operations::token_program::resolve_mint_token_program_id;
+        use spl_associated_token_account::get_associated_token_address_with_program_id;
+        use wallet_utils::address::parse_sol_address;
+
+        let mint = parse_sol_address(token)?;
+        let wallet = parse_sol_address(owner)?;
+
+        let token_program_id = resolve_mint_token_program_id(&self, mint).await?;
+
+        let ata = get_associated_token_address_with_program_id(&wallet, &mint, &token_program_id);
+
+        let res = self.token_balance(token, owner).await?;
+
+        let Some(account) = res
+            .value
+            .iter()
+            .find(|account| account.pubkey == ata.to_string())
+        else {
+            // ATA 不存在
+            return Ok(false);
+        };
+
+        Ok(account
+            .account
+            .data
+            .parsed
+            .info
+            .state
+            .trim()
+            .eq_ignore_ascii_case("frozen"))
+    }
+
     pub async fn send_transaction_with_opts(
         &self,
         tx: &str,
