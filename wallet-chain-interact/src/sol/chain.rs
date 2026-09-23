@@ -66,17 +66,7 @@ impl SolanaChain {
     }
 
     pub async fn black_address(&self, token: &str, owner: &str) -> crate::Result<bool> {
-        let res = self.provider.token_balance(token, owner).await?;
-        if res.value.is_empty() {
-            tracing::warn!(
-                "sol black address not found token account,token {},owner {}",
-                token,
-                owner
-            );
-            return Ok(false);
-        }
-
-        Ok(res.value[0].account.data.parsed.info.state == "frozen")
+        self.provider.black_address(token, owner).await
     }
 
     pub async fn query_tx_res(&self, hash: &str) -> crate::Result<Option<QueryTransactionResult>> {
