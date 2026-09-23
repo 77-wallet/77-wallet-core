@@ -1,11 +1,51 @@
-use super::{TransRespOpt, protocol::CheckpointResult};
+use super::{
+    TransRespOpt,
+    protocol::{CheckpointResult, SuiDenyStatus},
+};
 use serde_json::json;
 use sui_json_rpc_types::{
     Balance, Coin, CoinPage, DevInspectResults, DryRunTransactionBlockResponse, ObjectsPage,
     SuiCoinMetadata, SuiMoveNormalizedModule, SuiObjectResponse, SuiTransactionBlockResponse,
 };
 use sui_types::transaction::{ProgrammableTransaction, TransactionData, TransactionKind};
+use sui_types::{
+    Identifier, SUI_DENY_LIST_OBJECT_ID, SUI_FRAMEWORK_PACKAGE_ID,
+    base_types::{ObjectID, ObjectRef, SequenceNumber},
+    object::Owner,
+    programmable_transaction_builder::ProgrammableTransactionBuilder,
+    transaction::ObjectArg,
+};
 use wallet_transport::{client::RpcClient, types::JsonRpcParams};
+
+// Sui changed this field from `mutable: bool` to
+// `mutability: SharedObjectMutability`. Its BCS representation remains
+// backward compatible, so construct it through that stable representation.
+#[allow(dead_code)]
+#[derive(serde::Serialize)]
+enum CompatibleObjectArg {
+    ImmOrOwnedObject(ObjectRef),
+    SharedObject {
+        id: ObjectID,
+        initial_shared_version: SequenceNumber,
+        mutable: bool,
+    },
+    Receiving(ObjectRef),
+}
+
+fn immutable_shared_object_arg(
+    id: ObjectID,
+    initial_shared_version: SequenceNumber,
+) -> crate::Result<ObjectArg> {
+    let compatible = CompatibleObjectArg::SharedObject {
+        id,
+        initial_shared_version,
+        mutable: false,
+    };
+    let bytes = bcs::to_bytes(&compatible)
+        .map_err(|e| crate::Error::Other(format!("encode shared object argument: {e}")))?;
+    bcs::from_bytes(&bytes)
+        .map_err(|e| crate::Error::Other(format!("decode shared object argument: {e}")))
+}
 
 pub struct Provider {
     client: RpcClient,
@@ -95,6 +135,112 @@ impl Provider {
             .params(json!([id]));
         let res = self.client.invoke_request(params).await?;
         Ok(res)
+    }
+
+    async fn get_object_with_owner(&self, id: &str) -> crate::Result<SuiObjectResponse> {
+        let params = JsonRpcParams::default()
+            .method("sui_getObject")
+            .params(json!([id, { "showOwner": true }]));
+        Ok(self.client.invoke_request(params).await?)
+    }
+
+    pub async fn coin_deny_status(
+        &self,
+        coin_type: &str,
+        owner: &str,
+    ) -> crate::Result<SuiDenyStatus> {
+        let coin_type = wallet_utils::address::parse_sui_type_tag(coin_type)?;
+        let owner = wallet_utils::address::parse_sui_address(owner)?;
+
+        let deny_list = self
+            .get_object_with_owner(&SUI_DENY_LIST_OBJECT_ID.to_string())
+            .await?;
+        let deny_list = deny_list.data.ok_or_else(|| {
+            crate::Error::Other("Sui deny-list object 0x403 was not found".to_string())
+        })?;
+        let initial_shared_version = match deny_list.owner {
+            Some(Owner::Shared {
+                initial_shared_version,
+            }) => initial_shared_version,
+            other => {
+                return Err(crate::Error::Other(format!(
+                    "Sui deny-list object 0x403 is not shared: {other:?}"
+                )));
+            }
+        };
+
+        let mut builder = ProgrammableTransactionBuilder::new();
+        let deny_list_arg = builder
+            .obj(immutable_shared_object_arg(
+                SUI_DENY_LIST_OBJECT_ID,
+                initial_shared_version,
+            )?)
+            .map_err(|e| crate::Error::Other(format!("build deny-list argument: {e}")))?;
+        let owner_arg = builder
+            .pure(owner)
+            .map_err(|e| crate::Error::Other(format!("build owner argument: {e}")))?;
+        let module = Identifier::new("coin")
+            .map_err(|e| crate::Error::Other(format!("invalid Move module: {e}")))?;
+
+        for function in [
+            "deny_list_v2_contains_current_epoch",
+            "deny_list_v2_contains_next_epoch",
+        ] {
+            let function = Identifier::new(function)
+                .map_err(|e| crate::Error::Other(format!("invalid Move function: {e}")))?;
+            builder.programmable_move_call(
+                SUI_FRAMEWORK_PACKAGE_ID,
+                module.clone(),
+                function,
+                vec![coin_type.clone()],
+                vec![deny_list_arg, owner_arg],
+            );
+        }
+
+        let gas_price = self.get_reference_gas_price().await?;
+        let result = self
+            .dev_inspect_transaction(&owner.to_string(), builder.finish(), gas_price)
+            .await?;
+        if let Some(error) = result.error {
+            return Err(crate::Error::Other(format!(
+                "inspect Sui deny-list failed: {error}"
+            )));
+        }
+
+        let results = result.results.ok_or_else(|| {
+            crate::Error::Other("Sui deny-list inspection returned no results".to_string())
+        })?;
+        if results.len() != 2 {
+            return Err(crate::Error::Other(format!(
+                "Sui deny-list inspection returned {} results, expected 2",
+                results.len()
+            )));
+        }
+
+        let parse_bool = |index: usize, label: &str| -> crate::Result<bool> {
+            let bytes = results[index]
+                .return_values
+                .first()
+                .map(|(bytes, _)| bytes)
+                .ok_or_else(|| {
+                    crate::Error::Other(format!("Sui deny-list {label} query returned no value"))
+                })?;
+            bcs::from_bytes::<bool>(bytes).map_err(|e| {
+                crate::Error::Other(format!("invalid Sui deny-list {label} result: {e}"))
+            })
+        };
+
+        Ok(SuiDenyStatus {
+            current_epoch: parse_bool(0, "current epoch")?,
+            next_epoch: parse_bool(1, "next epoch")?,
+        })
+    }
+
+    pub async fn black_address(&self, coin_type: &str, owner: &str) -> crate::Result<bool> {
+        Ok(self
+            .coin_deny_status(coin_type, owner)
+            .await?
+            .is_blacklisted())
     }
 
     pub async fn get_all_coins_by_owner(
