@@ -164,10 +164,8 @@ impl TonChain {
             JettonWalletAddress::wallet_address(jetton_master, owner, &self.provider).await?;
         let jetton_wallet = jetton_wallet.to_base64_url();
 
-        // A Jetton wallet is deployed lazily. If it does not exist, there is no
-        // per-wallet status on chain and the owner is not locked.
         let account = self.provider.address_information(&jetton_wallet).await?;
-        if !account.state.eq_ignore_ascii_case("active") {
+        if !jetton_wallet_is_active(&account.state)? {
             return Ok(false);
         }
 
@@ -278,13 +276,52 @@ fn parse_jetton_wallet_status(value: &str) -> crate::Result<u8> {
     })
 }
 
+fn jetton_wallet_is_active(state: &str) -> crate::Result<bool> {
+    match state.trim().to_ascii_lowercase().as_str() {
+        "active" => Ok(true),
+        // Jetton wallets are deployed lazily. These states have no readable
+        // per-wallet issuer status, so the owner has not been locked.
+        "uninitialized" | "uninit" | "nonexist" | "non-existent" => Ok(false),
+        // A protocol-level frozen account retains only its StateInit hash. Its
+        // data, including the issuer-controlled status, cannot be inspected.
+        "frozen" => Err(crate::Error::Other(
+            "TON Jetton wallet account is frozen; issuer lock status cannot be determined"
+                .to_string(),
+        )),
+        state => Err(crate::Error::Other(format!(
+            "unknown TON Jetton wallet account state: {state}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod black_address_tests {
-    use super::parse_jetton_wallet_status;
+    use super::{jetton_wallet_is_active, parse_jetton_wallet_status};
 
     #[test]
     fn parses_hex_and_decimal_jetton_wallet_status() {
         assert_eq!(parse_jetton_wallet_status("0x3").unwrap(), 3);
         assert_eq!(parse_jetton_wallet_status("2").unwrap(), 2);
+    }
+
+    #[test]
+    fn distinguishes_uninitialized_and_frozen_jetton_wallets() {
+        assert!(jetton_wallet_is_active("active").unwrap());
+        assert!(!jetton_wallet_is_active("uninitialized").unwrap());
+        assert!(!jetton_wallet_is_active("nonexist").unwrap());
+
+        let error = jetton_wallet_is_active("frozen").unwrap_err();
+        assert!(matches!(&error, crate::Error::Other(_)));
+        assert!(error.to_string().contains("cannot be determined"));
+    }
+
+    #[test]
+    fn rejects_unknown_jetton_wallet_state() {
+        let error = jetton_wallet_is_active("unexpected").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("unknown TON Jetton wallet account state")
+        );
     }
 }
