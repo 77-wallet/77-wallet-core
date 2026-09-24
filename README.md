@@ -44,6 +44,15 @@ The workspace currently contains code for:
 - Tron
 - Ton
 
+Sui `Provider::new(full_node_url, headers)` accepts caller-defined headers as a
+`Option<HashMap<String, String>>` (`None` for unauthenticated endpoints). Configure
+`access-key` or other authentication metadata at the call site. Invalid ASCII
+gRPC metadata returns an input error. Construction requires a Tokio runtime.
+
+Sui `Provider::get_package_modules` returns optional module bytecode
+(`Option<Vec<u8>>`). When the gRPC service omits module contents, `bytecode` is
+`None`; callers should handle this before inspecting bytecode.
+
 EVM chain codes are `eth`, `bnb`, `polygon`, `avalanche`, `fantom`,
 `arbitrum`, `base`, and `scroll`. These chains share
 `ChainObject::Evm(EthereumInstance)` and the Ethereum derivation path while

@@ -1,5 +1,6 @@
 use super::consts::SUI_VALUE;
-use sui_json_rpc_types::Coin;
+use std::collections::BTreeMap;
+use sui_sdk_types::ObjectReference;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SuiDenyStatus {
@@ -21,30 +22,100 @@ impl SuiDenyStatus {
     }
 }
 
-/// Checkpoint 详情
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckpointResult {
-    pub epoch: String,
-    pub sequence_number: String,
-    pub digest: String,
-    pub network_total_transactions: String,
-    pub previous_digest: String,
-    pub epoch_rolling_gas_cost_summary: GasCostSummary,
-    pub timestamp_ms: String,
-    pub transactions: Vec<String>,
-    pub checkpoint_commitments: Vec<String>,
-    pub validator_signature: String,
+/// Total balance includes both Coin objects and Address Balance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiBalance {
+    pub total_balance: u64,
 }
 
-/// Gas 费用汇总
-#[derive(Debug, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GasCostSummary {
-    pub computation_cost: String,
-    pub storage_cost: String,
-    pub storage_rebate: String,
-    pub non_refundable_storage_fee: String,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiCoinMetadata {
+    pub decimals: u8,
+    pub symbol: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiCoin {
+    pub object_ref: ObjectReference,
+    pub balance: u64,
+}
+
+impl SuiCoin {
+    pub fn object_ref(&self) -> ObjectReference {
+        self.object_ref.clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiOwnedObject {
+    pub object_ref: ObjectReference,
+    pub object_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiOwnedObjectsPage {
+    pub data: Vec<SuiOwnedObject>,
+    pub next_cursor: Option<Vec<u8>>,
+}
+
+/// Checkpoint identity and the ordered transaction digests needed by scanners.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckpointResult {
+    pub sequence_number: u64,
+    pub digest: String,
+    pub transactions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiObject {
+    pub object_ref: ObjectReference,
+}
+
+/// Signed balance delta in the coin's smallest unit, including gas for SUI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiBalanceChange {
+    pub address: String,
+    pub coin_type: String,
+    pub amount: i128,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiQueriedTransaction {
+    pub digest: String,
+    pub checkpoint: u64,
+    pub timestamp_seconds: u64,
+    pub success: bool,
+    /// Computation plus storage cost minus storage rebate, in MIST.
+    pub net_gas_usage: i64,
+    pub gas_price: u64,
+    /// Owner of the gas payment, which can differ from the transaction sender.
+    pub gas_owner: String,
+    pub balance_changes: Vec<SuiBalanceChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiSimulation {
+    pub success: bool,
+    pub error: Option<String>,
+    pub computation_cost: u64,
+    pub storage_cost: u64,
+}
+
+/// Package modules from gRPC, with bytecode when supplied by the service.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiPackage {
+    pub storage_id: String,
+    pub original_id: String,
+    pub version: u64,
+    pub modules: BTreeMap<String, SuiPackageModule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuiPackageModule {
+    /// Serialized Move module bytecode, when supplied by the service.
+    /// MovePackageService.GetPackage may omit this field.
+    pub bytecode: Option<Vec<u8>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -70,10 +141,10 @@ impl EstimateFeeResp {
 }
 
 pub struct GasObject {
-    pub coin: Vec<Coin>,
+    pub coin: Vec<SuiCoin>,
 }
 impl GasObject {
-    pub fn new(coin: Vec<Coin>) -> Self {
+    pub fn new(coin: Vec<SuiCoin>) -> Self {
         Self { coin }
     }
 }

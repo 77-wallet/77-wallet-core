@@ -165,6 +165,7 @@ impl Error {
         match self {
             Error::TransportError(e) => e.is_network_error(),
             Error::UtilsError(e) => e.is_network_error(),
+            Error::SuiError(e) => e.is_network_error(),
             Error::RpcError(e) => e.contains("Transaction expired"),
             _ => false,
         }
@@ -187,16 +188,43 @@ impl RetryableError for Error {
         match self {
             Error::TransportError(e) => e.is_delay_retryable(),
             Error::UtilsError(e) => e.is_delay_retryable(),
+            Error::SuiError(e) => e.is_delay_retryable(),
             Error::RpcError(e) => e.contains("Transaction expired"),
             _ => false,
         }
     }
 
     fn retry_policy(&self) -> RetryPolicy {
-        if self.is_delay_retryable() {
-            RetryPolicy::Delay
-        } else {
-            RetryPolicy::Never
+        match self {
+            Error::SuiError(error) => error.retry_policy(),
+            _ if self.is_delay_retryable() => RetryPolicy::Delay,
+            _ => RetryPolicy::Never,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tonic::Code;
+
+    #[test]
+    fn root_error_delegates_sui_retry_policy() {
+        let read_error = Error::SuiError(crate::sui::error::SuiError::Transport {
+            operation: "get balance",
+            code: Code::Unavailable,
+            message: "node restarting".into(),
+        });
+        assert!(read_error.is_network_error());
+        assert_eq!(read_error.retry_policy(), RetryPolicy::Delay);
+
+        let submission_error =
+            Error::SuiError(crate::sui::error::SuiError::SubmissionOutcomeUnknown {
+                digest: Some("digest".into()),
+                code: Code::DeadlineExceeded,
+                message: "timeout".into(),
+            });
+        assert!(submission_error.is_network_error());
+        assert_eq!(submission_error.retry_policy(), RetryPolicy::Never);
     }
 }
