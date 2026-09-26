@@ -85,6 +85,10 @@ impl SuiChain {
         Ok(meta_data.name)
     }
 
+    pub async fn black_address(&self, coin_type: &str, owner: &str) -> crate::Result<bool> {
+        self.provider.black_address(coin_type, owner).await
+    }
+
     pub async fn estimate_fee(
         &self,
         sender: &str,

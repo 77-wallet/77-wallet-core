@@ -4,6 +4,7 @@ use super::{
     get_keypair,
     params::EstimateFeeParams,
     protocol::{
+        common::{RunGetMethodParams, StackItem},
         jettons::{JettonMasterResp, JettonWalletAddress, JettonWalletResp},
         transaction::EstimateFeeResp,
     },
@@ -154,6 +155,49 @@ impl TonChain {
         result.decimal()
     }
 
+    /// Checks the issuer-controlled status stored in a stablecoin Jetton wallet.
+    ///
+    /// This is an extension implemented by TON's centralized stablecoin
+    /// contract, not part of the generic TEP-74 Jetton interface.
+    pub async fn black_address(&self, jetton_master: &str, owner: &str) -> crate::Result<bool> {
+        let jetton_wallet =
+            JettonWalletAddress::wallet_address(jetton_master, owner, &self.provider).await?;
+        let jetton_wallet = jetton_wallet.to_base64_url();
+
+        let account = self.provider.address_information(&jetton_wallet).await?;
+        if !jetton_wallet_is_active(&account.state)? {
+            return Ok(false);
+        }
+
+        let params = RunGetMethodParams::<()>::new(&jetton_wallet, "get_status", vec![]);
+        let response = match self.provider.run_get_method(params).await {
+            Ok(response) => response,
+            Err(error) if get_status_is_unsupported(&error) => {
+                return Err(crate::Error::NotSupportApi(
+                    "TON Jetton wallet does not implement get_status".to_string(),
+                ));
+            }
+            Err(error) => return Err(error.into()),
+        };
+
+        if response.exit_code != 0 {
+            return Err(crate::Error::NotSupportApi(format!(
+                "TON Jetton wallet get_status exited with code {}",
+                response.exit_code
+            )));
+        }
+
+        let Some(StackItem::Num(_, value)) = response.stack.first() else {
+            return Err(crate::Error::Other(
+                "TON Jetton wallet get_status returned no numeric status".to_string(),
+            ));
+        };
+        let status = parse_jetton_wallet_status(value)?;
+
+        // bit 0 blocks outgoing transfers; bit 1 blocks incoming transfers.
+        Ok(status & 0b11 != 0)
+    }
+
     pub async fn query_tx_res(&self, _hash: &str) -> crate::Result<Option<QueryTransactionResult>> {
         // 这个需要 新的api 支持
         Ok(None)
@@ -195,5 +239,89 @@ impl TonChain {
         let block = self.provider.consensus_block().await?;
 
         Ok(block.consensus_block)
+    }
+}
+
+fn get_status_is_unsupported(error: &wallet_transport::TransportError) -> bool {
+    let wallet_transport::TransportError::NodeResponseError(error) = error else {
+        return false;
+    };
+    let message = error
+        .message
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    message.contains("exit_code: 11")
+        || message.contains("exit code: 11")
+        || message.contains("method not found")
+        || message.contains("unknown method")
+}
+
+fn parse_jetton_wallet_status(value: &str) -> crate::Result<u8> {
+    let value = value.trim();
+    let status = if let Some(value) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        u8::from_str_radix(value, 16)
+    } else {
+        value.parse::<u8>()
+    };
+
+    status.map_err(|error| {
+        crate::Error::Other(format!(
+            "invalid TON Jetton wallet status {value:?}: {error}"
+        ))
+    })
+}
+
+fn jetton_wallet_is_active(state: &str) -> crate::Result<bool> {
+    match state.trim().to_ascii_lowercase().as_str() {
+        "active" => Ok(true),
+        // Jetton wallets are deployed lazily. These states have no readable
+        // per-wallet issuer status, so the owner has not been locked.
+        "uninitialized" | "uninit" | "nonexist" | "non-existent" => Ok(false),
+        // A protocol-level frozen account retains only its StateInit hash. Its
+        // data, including the issuer-controlled status, cannot be inspected.
+        "frozen" => Err(crate::Error::Other(
+            "TON Jetton wallet account is frozen; issuer lock status cannot be determined"
+                .to_string(),
+        )),
+        state => Err(crate::Error::Other(format!(
+            "unknown TON Jetton wallet account state: {state}"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod black_address_tests {
+    use super::{jetton_wallet_is_active, parse_jetton_wallet_status};
+
+    #[test]
+    fn parses_hex_and_decimal_jetton_wallet_status() {
+        assert_eq!(parse_jetton_wallet_status("0x3").unwrap(), 3);
+        assert_eq!(parse_jetton_wallet_status("2").unwrap(), 2);
+    }
+
+    #[test]
+    fn distinguishes_uninitialized_and_frozen_jetton_wallets() {
+        assert!(jetton_wallet_is_active("active").unwrap());
+        assert!(!jetton_wallet_is_active("uninitialized").unwrap());
+        assert!(!jetton_wallet_is_active("nonexist").unwrap());
+
+        let error = jetton_wallet_is_active("frozen").unwrap_err();
+        assert!(matches!(&error, crate::Error::Other(_)));
+        assert!(error.to_string().contains("cannot be determined"));
+    }
+
+    #[test]
+    fn rejects_unknown_jetton_wallet_state() {
+        let error = jetton_wallet_is_active("unexpected").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("unknown TON Jetton wallet account state")
+        );
     }
 }
