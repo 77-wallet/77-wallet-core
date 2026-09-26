@@ -1,6 +1,26 @@
 use super::consts::SUI_VALUE;
 use sui_json_rpc_types::Coin;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SuiDenyStatus {
+    pub current_epoch: bool,
+    pub next_epoch: bool,
+}
+
+impl SuiDenyStatus {
+    pub fn is_blacklisted(self) -> bool {
+        self.current_epoch || self.next_epoch
+    }
+
+    pub fn cannot_send(self) -> bool {
+        self.next_epoch
+    }
+
+    pub fn cannot_receive(self) -> bool {
+        self.current_epoch
+    }
+}
+
 /// Checkpoint 详情
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
