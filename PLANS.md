@@ -60,3 +60,51 @@ Evidence: Safe's v1.3.0 `gnosis_safe_l2.json` and `proxy_factory.json` both
 list chain ID 43114 with canonical deployments. The focused offline Core
 preflight suite passed 9 tests; the crate `--lib --tests` check, changed-file
 format check, and diff check passed. No live Avalanche RPC was queried.
+
+## Arbitrum One Safe preflight (2026-09-29)
+
+- Core batch: in `wallet-chain-interact` only, allow Arbitrum One mainnet chain
+  ID 42161 through the existing Safe v1.3.0 factory/singleton preflight.
+  Preserve testnet and unsupported-chain rejection. Add offline fake-RPC tests
+  for valid contracts, wrong chain ID, missing singleton, and unsupported
+  testnet. Validate focused `safe_preflight` tests, crate check, formatting,
+  and diff check. Stop before SDK routing, fees, or transaction execution;
+  leave changes uncommitted and unpushed for review.
+- Source: Arbitrum's bridge docs list Arbitrum One as 42161. Safe's official
+  v1.3.0 `proxy_factory.json` and `gnosis_safe_l2.json` list chain 42161 with
+  the canonical addresses already used by this module.
+- Evidence: the focused offline `safe_preflight` suite passed 13 tests;
+  `cargo check -p wallet-chain-interact --lib --tests --offline` and
+  `git diff --check` passed. No live Arbitrum RPC was queried.
+
+## Base Safe preflight (2026-09-29)
+
+- Core batch: in `wallet-chain-interact` only, allow Base Mainnet chain ID
+  8453 through the existing Safe v1.3.0 factory/singleton preflight.
+  Keep Base Sepolia and unsupported chains closed. Cover matching RPC and
+  contract bytecode, wrong chain ID, missing singleton, and unsupported
+  testnet with the offline fake RPC. Validate focused `safe_preflight` tests,
+  crate check, formatting, and diff check. Stop before SDK routing, fee
+  handling, transaction execution, or any commit/push.
+- Source: Base's `eth_chainId` documentation lists mainnet 8453 (`0x2105`),
+  and Safe's official v1.3.0 factory and L2 singleton registries list chain
+  8453 with the canonical addresses already used by this module.
+- Evidence: the focused offline `safe_preflight` suite passed 17 tests;
+  `cargo check -p wallet-chain-interact --lib --tests --offline`, formatting,
+  and `git diff --check` passed. No live Base RPC was queried.
+
+## Scroll Safe preflight (2026-09-29)
+
+- Core batch: in `wallet-chain-interact` only, allow Scroll Mainnet chain ID
+  534352 through the existing Safe v1.3.0 factory/singleton preflight.
+  Keep unsupported networks closed. Cover matching RPC and bytecode, wrong
+  chain ID, missing singleton, and unsupported testnet with the offline fake
+  RPC. Validate focused `safe_preflight` tests, crate check, formatting, and
+  diff check. Stop before SDK routing, fee handling, transaction execution,
+  or any commit/push.
+- Source: Scroll's developer docs list mainnet chain ID 534352 (`0x82750`).
+  Safe's official v1.3.0 factory and L2 singleton registries list this chain
+  with the canonical addresses already used by the module.
+- Evidence: the focused offline `safe_preflight` suite passed 21 tests;
+  `cargo check -p wallet-chain-interact --lib --tests --offline`, formatting,
+  and `git diff --check` passed. No live Scroll RPC was queried.

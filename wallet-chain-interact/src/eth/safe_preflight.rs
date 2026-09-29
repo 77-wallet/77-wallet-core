@@ -10,6 +10,9 @@ impl EthChain {
         let expected_chain_id = match (self.chain_code, self.network) {
             (ChainCode::Polygon, NetworkKind::Mainnet) => 137,
             (ChainCode::Avalanche, NetworkKind::Mainnet) => 43114,
+            (ChainCode::Arbitrum, NetworkKind::Mainnet) => 42161,
+            (ChainCode::Base, NetworkKind::Mainnet) => 8453,
+            (ChainCode::Scroll, NetworkKind::Mainnet) => 534352,
             _ => {
                 return Err(crate::Error::Other(format!(
                     "Safe deployment preflight is unsupported on {} {:?}",
@@ -263,6 +266,216 @@ mod tests {
         let provider = Provider::new(client).unwrap();
         let chain = EthChain::new(provider, NetworkKind::Testnet, ChainCode::Avalanche).unwrap();
 
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported")
+        );
+    }
+
+    #[tokio::test]
+    async fn arbitrum_safe_preflight_accepts_matching_rpc_and_contracts() {
+        let (chain, worker) = fake_rpc(
+            ChainCode::Arbitrum,
+            vec![
+                ("eth_chainId", "0xa4b1"),
+                ("eth_getCode", "0x6001"),
+                ("eth_getCode", "0x6002"),
+            ],
+        );
+        chain.preflight_safe_deployment().await.unwrap();
+        assert_eq!(
+            worker.join().unwrap(),
+            ["eth_chainId", "eth_getCode", "eth_getCode"]
+        );
+    }
+
+    #[tokio::test]
+    async fn arbitrum_safe_preflight_rejects_wrong_chain_before_contract_calls() {
+        let (chain, worker) = fake_rpc(ChainCode::Arbitrum, vec![("eth_chainId", "0x89")]);
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("expected 42161")
+        );
+        assert_eq!(worker.join().unwrap(), ["eth_chainId"]);
+    }
+
+    #[tokio::test]
+    async fn arbitrum_safe_preflight_rejects_missing_singleton() {
+        let (chain, worker) = fake_rpc(
+            ChainCode::Arbitrum,
+            vec![
+                ("eth_chainId", "0xa4b1"),
+                ("eth_getCode", "0x6001"),
+                ("eth_getCode", "0x"),
+            ],
+        );
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("singleton")
+        );
+        assert_eq!(
+            worker.join().unwrap(),
+            ["eth_chainId", "eth_getCode", "eth_getCode"]
+        );
+    }
+
+    #[tokio::test]
+    async fn arbitrum_testnet_remains_unsupported_without_rpc_call() {
+        let client = RpcClient::new("http://127.0.0.1:1", None, None).unwrap();
+        let provider = Provider::new(client).unwrap();
+        let chain = EthChain::new(provider, NetworkKind::Testnet, ChainCode::Arbitrum).unwrap();
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported")
+        );
+    }
+
+    #[tokio::test]
+    async fn base_safe_preflight_accepts_matching_rpc_and_contracts() {
+        let (chain, worker) = fake_rpc(
+            ChainCode::Base,
+            vec![
+                ("eth_chainId", "0x2105"),
+                ("eth_getCode", "0x6001"),
+                ("eth_getCode", "0x6002"),
+            ],
+        );
+        chain.preflight_safe_deployment().await.unwrap();
+        assert_eq!(
+            worker.join().unwrap(),
+            ["eth_chainId", "eth_getCode", "eth_getCode"]
+        );
+    }
+
+    #[tokio::test]
+    async fn base_safe_preflight_rejects_wrong_chain_before_contract_calls() {
+        let (chain, worker) = fake_rpc(ChainCode::Base, vec![("eth_chainId", "0x1")]);
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("expected 8453")
+        );
+        assert_eq!(worker.join().unwrap(), ["eth_chainId"]);
+    }
+
+    #[tokio::test]
+    async fn base_safe_preflight_rejects_missing_singleton() {
+        let (chain, worker) = fake_rpc(
+            ChainCode::Base,
+            vec![
+                ("eth_chainId", "0x2105"),
+                ("eth_getCode", "0x6001"),
+                ("eth_getCode", "0x"),
+            ],
+        );
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("singleton")
+        );
+        assert_eq!(
+            worker.join().unwrap(),
+            ["eth_chainId", "eth_getCode", "eth_getCode"]
+        );
+    }
+
+    #[tokio::test]
+    async fn base_testnet_remains_unsupported_without_rpc_call() {
+        let client = RpcClient::new("http://127.0.0.1:1", None, None).unwrap();
+        let provider = Provider::new(client).unwrap();
+        let chain = EthChain::new(provider, NetworkKind::Testnet, ChainCode::Base).unwrap();
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported")
+        );
+    }
+
+    #[tokio::test]
+    async fn scroll_safe_preflight_accepts_matching_rpc_and_contracts() {
+        let (chain, worker) = fake_rpc(
+            ChainCode::Scroll,
+            vec![
+                ("eth_chainId", "0x82750"),
+                ("eth_getCode", "0x6001"),
+                ("eth_getCode", "0x6002"),
+            ],
+        );
+        chain.preflight_safe_deployment().await.unwrap();
+        assert_eq!(
+            worker.join().unwrap(),
+            ["eth_chainId", "eth_getCode", "eth_getCode"]
+        );
+    }
+
+    #[tokio::test]
+    async fn scroll_safe_preflight_rejects_wrong_chain_before_contract_calls() {
+        let (chain, worker) = fake_rpc(ChainCode::Scroll, vec![("eth_chainId", "0x1")]);
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("expected 534352")
+        );
+        assert_eq!(worker.join().unwrap(), ["eth_chainId"]);
+    }
+
+    #[tokio::test]
+    async fn scroll_safe_preflight_rejects_missing_singleton() {
+        let (chain, worker) = fake_rpc(
+            ChainCode::Scroll,
+            vec![
+                ("eth_chainId", "0x82750"),
+                ("eth_getCode", "0x6001"),
+                ("eth_getCode", "0x"),
+            ],
+        );
+        assert!(
+            chain
+                .preflight_safe_deployment()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("singleton")
+        );
+        assert_eq!(
+            worker.join().unwrap(),
+            ["eth_chainId", "eth_getCode", "eth_getCode"]
+        );
+    }
+
+    #[tokio::test]
+    async fn scroll_testnet_remains_unsupported_without_rpc_call() {
+        let client = RpcClient::new("http://127.0.0.1:1", None, None).unwrap();
+        let provider = Provider::new(client).unwrap();
+        let chain = EthChain::new(provider, NetworkKind::Testnet, ChainCode::Scroll).unwrap();
         assert!(
             chain
                 .preflight_safe_deployment()
