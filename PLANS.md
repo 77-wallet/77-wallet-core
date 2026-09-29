@@ -43,3 +43,20 @@
   fee and removes duplicated Safe addresses and RPC validation from SDK.
   Validate focused wallet-api tests and library check. Stop before transaction
   execution or enabling Avalanche, Arbitrum, Base, and Scroll.
+
+## Avalanche Safe preflight (2026-09-29)
+
+- Batch 1, Core only: allow Avalanche mainnet chain ID 43114 through the
+  existing Safe v1.3.0 factory/singleton preflight. Keep testnet and other
+  unsupported chains closed. Use the existing offline fake RPC to cover
+  valid bytecode, wrong chain ID, and missing contract code. Validate focused
+  `wallet-chain-interact` tests, crate check, formatting, and diff check.
+  Stop before SDK routing, fee handling, or live transaction execution.
+- Batch 2, SDK only: enable Avalanche in the multisig adapter after the Core
+  commit is available; add business-entry tests for RPC rejection before
+  service fee. Stop before transfer/sign/execute and the other new chains.
+
+Evidence: Safe's v1.3.0 `gnosis_safe_l2.json` and `proxy_factory.json` both
+list chain ID 43114 with canonical deployments. The focused offline Core
+preflight suite passed 9 tests; the crate `--lib --tests` check, changed-file
+format check, and diff check passed. No live Avalanche RPC was queried.
