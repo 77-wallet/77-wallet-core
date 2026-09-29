@@ -23,6 +23,13 @@ impl Provider {
         Ok(Self { client: rpc_client })
     }
 
+    pub(super) async fn additional_fee_rpc(
+        &self,
+        params: JsonRpcParams<Vec<serde_json::Value>>,
+    ) -> crate::Result<String> {
+        Ok(self.client.invoke_request::<_, String>(params).await?)
+    }
+
     pub async fn balance(&self, addr: &str) -> crate::Result<U256> {
         let params = JsonRpcParams::default()
             .method("eth_getBalance")
