@@ -30,3 +30,16 @@
 - Existing EIP-1559 signing vectors pass without live RPC calls.
 - Do not add legacy transactions, `SigningBackend`, hardware protocols, SDK
   changes, backend configuration, or hard-coded production chain IDs.
+
+## Safe deployment preflight follow-up (2026-09-29)
+
+- Batch 1: in `wallet-chain-interact` only, expose an `EthChain` Safe deployment
+  preflight for Polygon. Check chain ID 137 and nonempty valid code at the
+  existing canonical Safe factory and singleton addresses. Keep ETH/BNB
+  behavior unchanged. Add offline fake-RPC success, wrong-chain, missing-code,
+  and malformed-code tests. Validate focused crate tests, crate check,
+  formatting, and diff check. Stop before SDK integration and other EVM chains.
+- Batch 2: SDK calls the Core preflight before charging a deployment service
+  fee and removes duplicated Safe addresses and RPC validation from SDK.
+  Validate focused wallet-api tests and library check. Stop before transaction
+  execution or enabling Avalanche, Arbitrum, Base, and Scroll.
