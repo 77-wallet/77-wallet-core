@@ -1,5 +1,17 @@
 # 77Wallet 2.2 Unified EVM Chain Support
 
+## Active: Bound Base Additional-Fee Requests Before Local dev Merge (2026-09-30)
+
+Scope: `wallet-chain-interact` only. Preserve the current Base native/ERC-20
+transfer estimate, but reject requests with access lists or other transaction
+fields not represented by the fixed unsigned-envelope allowance. Do not change
+SDK, plugin, or remote branches. Add an offline regression test first.
+
+Validation: focused `evm_additional_fee` tests, crate-level offline lib tests,
+`cargo fmt --all -- --check`, and merged-result checks on local `dev`.
+Stop if compilation cannot complete with available disk space or if merging
+introduces a conflict or failed test; do not push.
+
 ## Active: EVM Additional Fee Core Ownership (2026-09-29)
 
 This worktree is `codex/refactor-2.2-evm-fee-core`, based on

@@ -4,7 +4,7 @@ use crate::{
 };
 use alloy::{
     network::TransactionBuilder,
-    primitives::{Address, U256, keccak256},
+    primitives::{Address, TxKind, U256, keccak256},
     rpc::types::TransactionRequest,
 };
 use serde_json::{Value, json};
@@ -68,8 +68,9 @@ fn rpc(result: Value) -> (String, thread::JoinHandle<(Value, String)>) {
 }
 
 fn native_tx() -> TransactionRequest {
+    let from: Address = "0x0000000000000000000000000000000000000001".parse().unwrap();
     let to: Address = "0x0000000000000000000000000000000000000002".parse().unwrap();
-    TransactionRequest::default().to(to).with_value(U256::from(1_u64))
+    TransactionRequest::default().from(from).to(to).with_value(U256::from(1_u64))
 }
 
 fn erc20_tx() -> TransactionRequest {
@@ -133,7 +134,7 @@ async fn evm_additional_fee_scroll_erc20_contains_transfer_calldata() {
 
 #[tokio::test]
 async fn evm_additional_fee_base_native_and_erc20_query_oracle_upper_bound() {
-    for (tx, expected_size) in [(native_tx(), 160), (erc20_tx(), 228)] {
+    for (tx, expected_size) in [(native_tx(), 256), (erc20_tx(), 324)] {
         let (url, worker) = rpc(json!(format!("0x{:064x}", 42_u64)));
         let fee = chain(&url, None, ChainCode::Base).estimate_additional_fee(tx).await.unwrap();
         let (request, _) = worker.join().unwrap();
@@ -145,6 +146,34 @@ async fn evm_additional_fee_base_native_and_erc20_query_oracle_upper_bound() {
         let selector = keccak256(b"getL1FeeUpperBound(uint256)");
         assert_eq!(&data[..10], format!("0x{}", hex::encode(&selector[..4])));
         assert_eq!(u64::from_str_radix(&data[data.len() - 64..], 16).unwrap(), expected_size);
+    }
+}
+
+#[tokio::test]
+async fn evm_additional_fee_base_rejects_access_list_before_rpc() {
+    let mut tx = native_tx();
+    tx.access_list = Some(Default::default());
+    let quote =
+        chain("http://127.0.0.1:1", None, ChainCode::Base).estimate_additional_fee(tx).await;
+    assert!(
+        matches!(quote, Err(crate::Error::Other(message)) if message.contains("unsupported Base transaction"))
+    );
+}
+
+#[tokio::test]
+async fn evm_additional_fee_base_rejects_non_transfer_and_legacy_shapes() {
+    let mut contract_call = native_tx();
+    contract_call.input = vec![0xde, 0xad, 0xbe, 0xef].into();
+    let mut legacy = native_tx();
+    legacy.gas_price = Some(1);
+    let mut contract_creation = native_tx();
+    contract_creation.to = Some(TxKind::Create);
+    for tx in [contract_call, legacy, contract_creation] {
+        let quote =
+            chain("http://127.0.0.1:1", None, ChainCode::Base).estimate_additional_fee(tx).await;
+        assert!(
+            matches!(quote, Err(crate::Error::Other(message)) if message.contains("unsupported Base transaction"))
+        );
     }
 }
 

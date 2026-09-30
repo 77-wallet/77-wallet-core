@@ -1,21 +1,40 @@
 use crate::{Error, eth::Provider};
 use alloy::{
-    primitives::{U256, keccak256},
+    primitives::{TxKind, U256, keccak256},
     rpc::types::TransactionRequest,
 };
 use serde_json::json;
 use wallet_transport::types::JsonRpcParams;
 
 const GAS_PRICE_ORACLE: &str = "0x420000000000000000000000000000000000000f";
-// Conservative unsigned EIP-1559 envelope for ordinary transfers. The
-// oracle adds the signature bytes itself; calldata is added separately.
-const MAX_UNSIGNED_EIP1559_ENVELOPE_BYTES: usize = 160;
+// Bounds the unsigned EIP-1559 fields of a plain transfer (chain ID, nonce,
+// fees, gas, recipient, value, and RLP framing). The oracle adds signatures;
+// calldata is counted separately. Extended transaction shapes are rejected.
+const MAX_UNSIGNED_EIP1559_ENVELOPE_BYTES: usize = 256;
 
 pub(super) async fn estimate_l1_data_fee(
     provider: &Provider,
     tx: TransactionRequest,
 ) -> crate::Result<U256> {
-    let input_len = tx.input.input().map_or(0, |input| input.len());
+    let input = tx.input.input().map_or(&[][..], |input| input.as_ref());
+    let is_native = input.is_empty();
+    let is_erc20_transfer = input.len() == 68
+        && input.starts_with(&keccak256(b"transfer(address,uint256)")[..4])
+        && tx.value.unwrap_or_default().is_zero();
+    if tx.from.is_none()
+        || !matches!(tx.to, Some(TxKind::Call(_)))
+        || !(is_native || is_erc20_transfer)
+        || tx.access_list.is_some()
+        || tx.gas_price.is_some()
+        || tx.transaction_type.is_some_and(|tx_type| tx_type != 2)
+        || tx.max_fee_per_blob_gas.is_some()
+        || tx.blob_versioned_hashes.is_some()
+        || tx.sidecar.is_some()
+        || tx.authorization_list.is_some()
+    {
+        return Err(Error::Other("unsupported Base transaction for L1 fee estimate".to_string()));
+    }
+    let input_len = input.len();
     let unsigned_size = input_len
         .checked_add(MAX_UNSIGNED_EIP1559_ENVELOPE_BYTES)
         .ok_or_else(|| Error::Other("Base unsigned transaction size overflow".to_string()))?;
