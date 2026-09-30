@@ -106,20 +106,23 @@ impl Provider {
         let chain_id = self.chain_id().await?;
         let tx = tx.with_nonce(n).with_chain_id(chain_id);
 
-        // 3. signer
+        Self::sign_transaction(tx, key).await
+    }
+
+    async fn sign_transaction(
+        tx: TransactionRequest,
+        key: &str,
+    ) -> crate::Result<(Vec<u8>, String)> {
         let signer: alloy::signers::local::PrivateKeySigner = key
             .parse()
             .map_err(|_| crate::Error::SignError("parse key failed".to_string()))?;
         let wallet = alloy::network::EthereumWallet::from(signer);
 
-        // 4. 签名 envelope
         let tx_envelope = tx
             .build(&wallet)
             .await
             .map_err(|e| crate::Error::SignError(e.to_string()))?;
 
-        // 5. 编码
-        // 完整签名raw_tx
         let bytes = tx_envelope.encoded_2718();
 
         // 无需 decode/encode，直接用包含签名的 envelope 计算 hash
@@ -152,19 +155,7 @@ impl Provider {
         let chain_id = self.chain_id().await?;
         let tx = tx.with_nonce(n).with_chain_id(chain_id);
 
-        // 签名交易
-        let signer: alloy::signers::local::PrivateKeySigner = key
-            .parse()
-            .map_err(|_| crate::Error::SignError("get singer from key error".to_string()))?;
-        let wallet = alloy::network::EthereumWallet::from(signer);
-
-        let tx_envelope = tx
-            .build(&wallet)
-            .await
-            .map_err(|e| crate::Error::SignError(e.to_string()))?;
-        tx_envelope.encoded_2718();
-        let tx_encoded = tx_envelope.encoded_2718();
-
+        let (tx_encoded, _) = Self::sign_transaction(tx, key).await?;
         let hex_raw = format!("0x{}", hex::encode(tx_encoded));
         let params = JsonRpcParams::default()
             .method("eth_sendRawTransaction")
@@ -393,5 +384,66 @@ impl Provider {
 
         let result = self.client.invoke_request::<_, Block>(params).await?;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Provider;
+    use crate::{eth::operations::TransferOpt, types::Transaction as _};
+    use alloy::{network::TransactionBuilder as _, primitives::U256};
+
+    const TEST_PRIVATE_KEY: &str =
+        "0000000000000000000000000000000000000000000000000000000000000001";
+    const FROM: &str = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
+    const TO: &str = "0x2222222222222222222222222222222222222222";
+    const TOKEN: &str = "0x3333333333333333333333333333333333333333";
+    const TEST_CHAIN_ID: u64 = 84_530;
+    const NONCE: u64 = 7;
+
+    async fn sign_transfer(contract: Option<String>) -> (String, String) {
+        let gas_limit = if contract.is_some() { 65_000 } else { 21_000 };
+        let tx = TransferOpt::new(FROM, TO, U256::from(987_654_321u64), contract)
+            .unwrap()
+            .build_transaction()
+            .unwrap()
+            .with_gas_limit(gas_limit)
+            .with_max_priority_fee_per_gas(1_500_000_000u128)
+            .with_max_fee_per_gas(30_000_000_000u128)
+            .with_nonce(NONCE)
+            .with_chain_id(TEST_CHAIN_ID);
+
+        let (raw, hash) = Provider::sign_transaction(tx, TEST_PRIVATE_KEY)
+            .await
+            .unwrap();
+        (format!("0x{}", hex::encode(raw)), hash)
+    }
+
+    #[tokio::test]
+    async fn evm_eip1559_native_signing_vector_is_stable() {
+        let (raw, hash) = sign_transfer(None).await;
+        assert!(raw.starts_with("0x02"));
+        assert_eq!(
+            raw,
+            "0x02f87283014a32078459682f008506fc23ac00825208942222222222222222222222222222222222222222843ade68b180c001a0e79b603f5408f017b2fbd8bb2ee7e98490bde1a69ca35bcb7bc2497d11657607a00a52d4d7808cd705a2b4cbc2c363efd14966a83ba603fd5a2a2ca3d5ec9cf128"
+        );
+        assert_eq!(
+            hash,
+            "0xf482a27dbfadda329b0d42b56617ee37e747079ae8fc4677e16cd12439b765e1"
+        );
+    }
+
+    #[tokio::test]
+    async fn evm_eip1559_erc20_signing_vector_is_stable() {
+        let (raw, hash) = sign_transfer(Some(TOKEN.to_string())).await;
+        assert!(raw.starts_with("0x02"));
+        assert_eq!(
+            raw,
+            "0x02f8b383014a32078459682f008506fc23ac0082fde894333333333333333333333333333333333333333380b844a9059cbb0000000000000000000000002222222222222222222222222222222222222222000000000000000000000000000000000000000000000000000000003ade68b1c080a007f5672fff804c3f586b0e853f0c149b88fa2b3dd37a8aa93155db7fc075b661a06f6a637b9fdd117536a6fc72e20800614eaea760e46b58435f276fb3109880d3"
+        );
+        assert_eq!(
+            hash,
+            "0x8228153a938440610a562877204e871147d56e576eb2bed9290005d6cd23d6bf"
+        );
     }
 }
