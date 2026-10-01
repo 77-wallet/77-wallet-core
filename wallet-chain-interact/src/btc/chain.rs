@@ -3,7 +3,7 @@ use super::params::{FeeSetting, TransferResp};
 use super::provider::{Provider, ProviderConfig};
 use super::script::BtcScript;
 use super::signature::{BtcSignature, MultisigSignParams, SignatureCombiner};
-use super::{network_convert, operations, protocol};
+use super::{ParseBtcAddress, network_convert, operations, protocol};
 use crate::btc::signature::predict_transaction_size;
 use crate::types::{ChainPrivateKey, FetchMultisigAddressResp, MultisigSignResp, MultisigTxResp};
 use crate::{BillResourceConsume, QueryTransactionResult};
@@ -123,13 +123,11 @@ impl BtcChain {
         // 签名
         let utxo = transaction_builder.utxo.used_utxo_to_hash_map();
         let signer = BtcSignature::new(&key, utxo)?;
-        signer
-            .sign(
-                params.address_type,
-                &self.provider,
-                &mut transaction_builder.transaction,
-            )
-            .await?;
+        signer.sign(
+            params.address_type,
+            &mut transaction_builder.transaction,
+            &params.from.script_pubkey(),
+        )?;
 
         // 获取原始交易
         let raw = transaction_builder.get_raw_transaction();
@@ -159,13 +157,11 @@ impl BtcChain {
         let utxo = transaction_builder.utxo.used_utxo_to_hash_map();
 
         let signer = BtcSignature::new(&key, utxo)?;
-        signer
-            .sign(
-                params.address_type,
-                &self.provider,
-                &mut transaction_builder.transaction,
-            )
-            .await?;
+        signer.sign(
+            params.address_type,
+            &mut transaction_builder.transaction,
+            &params.from.script_pubkey(),
+        )?;
 
         if transaction_builder.exceeds_max_fee(fee) {
             return Err(crate::UtxoError::ExceedsMaximum.into());
@@ -280,10 +276,16 @@ impl BtcChain {
         let script = ScriptBuf::from_hex(&params.script_hex)
             .map_err(|e| crate::Error::BtcScript(e.to_string()))?;
 
+        let prevout_script_pubkey = ParseBtcAddress::new(self.network)
+            .parse_address(&raw_data.multisig_address)?
+            .script_pubkey();
         let signer = BtcSignature::new(&key, raw_data.used_utxo)?;
-        let sign = signer
-            .multisig_sign_v1(params.address_type, script, transaction, &self.provider)
-            .await?;
+        let sign = signer.multisig_sign_v1(
+            params.address_type,
+            script,
+            transaction,
+            &prevout_script_pubkey,
+        )?;
 
         let signature = hex_func::bincode_encode(&sign)?;
         let resp = MultisigSignResp::new(signature);
