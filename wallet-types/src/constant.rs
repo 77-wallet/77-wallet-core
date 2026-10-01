@@ -76,6 +76,12 @@ pub mod chain_code {
     pub const TRON: &str = "tron";
     pub const SOLANA: &str = "sol";
     pub const BNB: &str = "bnb";
+    pub const POLYGON: &str = "polygon";
+    pub const AVALANCHE: &str = "avalanche";
+    pub const FANTOM: &str = "fantom";
+    pub const ARBITRUM: &str = "arbitrum";
+    pub const BASE: &str = "base";
+    pub const SCROLL: &str = "scroll";
     pub const BTC: &str = "btc";
     pub const LTC: &str = "ltc";
     pub const DOG: &str = "doge";

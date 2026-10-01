@@ -120,7 +120,16 @@ mod tests {
         let chain_code = hd_path.get_chain_codes().unwrap();
         assert_eq!(
             chain_code,
-            ChainCodes(vec![ChainCode::Ethereum, ChainCode::BnbSmartChain])
+            ChainCodes(vec![
+                ChainCode::Ethereum,
+                ChainCode::BnbSmartChain,
+                ChainCode::Polygon,
+                ChainCode::Avalanche,
+                ChainCode::Fantom,
+                ChainCode::Arbitrum,
+                ChainCode::Base,
+                ChainCode::Scroll,
+            ])
         );
         let account_id = hd_path.get_account_id().unwrap();
         assert_eq!(account_id, 4294962620);
