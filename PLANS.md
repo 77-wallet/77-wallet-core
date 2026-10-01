@@ -1,5 +1,25 @@
 # 77Wallet 2.2 Unified EVM Chain Support
 
+## Complete: Restore Offline Taproot Prevouts After Merge Revert (2026-10-01)
+
+Scope: `wallet-chain-interact` only. Reverse commit `254dde6`, restoring the
+offline Taproot prevout construction from `39b85f3` in `btc/chain.rs` and
+`btc/signature.rs`. Preserve all later dev/test/main merges and do not push.
+
+Validation: inspect the recovered diff against `dev`, run the narrowest
+relevant offline BTC tests, then run the crate-level offline library tests,
+`cargo fmt --all -- --check`, and `git diff --check`.
+
+Stop condition: the two BTC files match the intended `dev` implementation,
+the relevant validation passes, and the recovery is committed locally with a
+Conventional Commit message. Stop on conflicts or unrelated file changes.
+
+Evidence: both focused BTC signature tests passed, the offline
+`wallet-chain-interact` library check passed, and the recovered BTC files match
+`dev`. The full library suite had 62 passes and 27 unrelated failures from
+restricted local socket binding and live Sui RPC access. Workspace formatting
+also reports two pre-existing EVM formatting differences outside this scope.
+
 ## Active: Bound Base Additional-Fee Requests Before Local dev Merge (2026-09-30)
 
 Scope: `wallet-chain-interact` only. Preserve the current Base native/ERC-20
