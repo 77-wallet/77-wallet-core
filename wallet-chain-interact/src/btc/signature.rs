@@ -1,4 +1,4 @@
-use super::utxos::Usedutxo;
+use super::{provider::Provider, utxos::Usedutxo};
 use crate::{Error, script::BtcScript};
 use bitcoin::{
     Amount, CompressedPublicKey, EcdsaSighashType, PrivateKey, ScriptBuf, TapSighashType,
@@ -34,17 +34,17 @@ impl BtcSignature {
         })
     }
 
-    pub fn sign(
+    pub async fn sign(
         self,
         address_type: BtcAddressType,
+        provider: &Provider,
         transaction: &mut Transaction,
-        prevout_script_pubkey: &ScriptBuf,
     ) -> crate::Result<()> {
         match address_type {
             BtcAddressType::P2pkh => self.p2pkh(transaction)?,
             BtcAddressType::P2wpkh => self.p2wpkh(transaction)?,
             BtcAddressType::P2shWpkh => self.p2sh_wpkh(transaction)?,
-            BtcAddressType::P2tr => self.p2tr(transaction, prevout_script_pubkey)?,
+            BtcAddressType::P2tr => self.p2tr(transaction, provider).await?,
             _ => {
                 return Err(crate::Error::SignError(format!(
                     "address type not support {address_type:?}",
@@ -155,17 +155,17 @@ impl BtcSignature {
         Ok(())
     }
 
-    pub fn multisig_sign_v1(
+    pub async fn multisig_sign_v1(
         &self,
         address_type: BtcAddressType,
         script: ScriptBuf,
         tx: Transaction,
-        prevout_script_pubkey: &ScriptBuf,
+        provider: &Provider,
     ) -> crate::Result<Vec<Vec<u8>>> {
         match address_type {
             BtcAddressType::P2sh => self.p2sh(&tx, script),
             BtcAddressType::P2wsh | BtcAddressType::P2shWsh => self.p2wsh(&tx, script),
-            BtcAddressType::P2trSh => self.p2tr_sh(&tx, script, prevout_script_pubkey),
+            BtcAddressType::P2trSh => self.p2tr_sh(&tx, script, provider).await,
             _ => Err(crate::Error::SignError(format!(
                 "sign not support multisig address {address_type:?}",
             ))),
@@ -234,28 +234,20 @@ impl BtcSignature {
         Ok(Amount::from_sat(utxo.value))
     }
 
-    fn prevouts(&self, tx: &Transaction, script_pubkey: &ScriptBuf) -> crate::Result<Vec<TxOut>> {
-        tx.input
-            .iter()
-            .map(|input| {
-                let previous = input.previous_output;
-                Ok(TxOut {
-                    value: self.get_amount(previous.txid, previous.vout)?,
-                    script_pubkey: script_pubkey.clone(),
-                })
-            })
-            .collect()
-    }
-
-    pub fn p2tr(
-        &self,
-        tx: &mut Transaction,
-        prevout_script_pubkey: &ScriptBuf,
-    ) -> crate::Result<()> {
+    pub async fn p2tr(&self, tx: &mut Transaction, provider: &Provider) -> crate::Result<()> {
         let keypair = Keypair::from_secret_key(&self.secp, &self.private_key.inner);
 
+        let mut prevouts = vec![];
+
         let len = tx.input.len();
-        let prevouts = self.prevouts(tx, prevout_script_pubkey)?;
+        for i in 0..len {
+            // TODO： 是否有更好的方式获取签名的script_pubkey,又去rpc node 查询了一次 增加了网络io
+            let tx_id = tx.input[i].previous_output.txid;
+            let index = tx.input[i].previous_output.vout;
+            let out = provider.utxo_out(&tx_id.to_string(), index).await?;
+            let tx_out = TxOut::try_from(out).unwrap();
+            prevouts.push(tx_out);
+        }
         let prevouts = Prevouts::All(&prevouts);
 
         let mut sighasher = SighashCache::new(&mut *tx);
@@ -283,16 +275,24 @@ impl BtcSignature {
         Ok(())
     }
 
-    pub fn p2tr_sh(
+    pub async fn p2tr_sh(
         &self,
         tx: &Transaction,
         script: ScriptBuf,
-        prevout_script_pubkey: &ScriptBuf,
+        provider: &Provider,
     ) -> crate::Result<Vec<Vec<u8>>> {
         let keypair = Keypair::from_secret_key(&self.secp, &self.private_key.inner);
 
+        let mut prevouts = vec![];
         let len = tx.input.len();
-        let prevouts = self.prevouts(tx, prevout_script_pubkey)?;
+        for i in 0..len {
+            // TODO： 是否有更好的方式获取签名的script_pubkey,又去rpc node 查询了一次 增加了网络io
+            let tx_id = tx.input[i].previous_output.txid;
+            let index = tx.input[i].previous_output.vout;
+            let out = provider.utxo_out(&tx_id.to_string(), index).await?;
+            let tx_out = TxOut::try_from(out).unwrap();
+            prevouts.push(tx_out);
+        }
         let prevouts = Prevouts::All(&prevouts);
 
         let mut sig = vec![];
@@ -326,15 +326,28 @@ impl BtcSignature {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::btc::utxos::Utxo;
-    use bitcoin::{OutPoint, TxIn, Txid, absolute::LockTime, transaction::Version};
+    use crate::btc::provider::{Provider, ProviderConfig};
+    use bitcoin::{absolute::LockTime, transaction::Version};
 
-    #[test]
-    fn test_multisig_sign_v1_rejects_unsupported_address_type() {
+    #[tokio::test]
+    async fn test_multisig_sign_v1_rejects_unsupported_address_type() {
+        let secp = bitcoin::secp256k1::Secp256k1::new();
         let secret = bitcoin::secp256k1::SecretKey::from_slice(&[1u8; 32]).unwrap();
         let private_key = PrivateKey::new(secret, bitcoin::Network::Testnet);
         let used_utxo = Usedutxo::default();
         let signer = BtcSignature::new(&private_key.to_wif(), used_utxo).unwrap();
+
+        let provider = Provider::new(
+            ProviderConfig {
+                rpc_url: "http://127.0.0.1:8332".to_string(),
+                rpc_auth: None,
+                http_url: "http://127.0.0.1:8332".to_string(),
+                http_api_key: None,
+            },
+            None,
+            None,
+        )
+        .unwrap();
 
         let tx = Transaction {
             version: Version::TWO,
@@ -345,69 +358,12 @@ mod tests {
 
         let script = ScriptBuf::new();
         let err = signer
-            .multisig_sign_v1(BtcAddressType::P2pkh, script.clone(), tx, &script)
+            .multisig_sign_v1(BtcAddressType::P2pkh, script, tx, &provider)
+            .await
             .unwrap_err();
 
         assert!(matches!(err, crate::Error::SignError(_)));
-    }
-
-    #[test]
-    fn test_p2tr_signs_multiple_inputs_without_provider() {
-        let secp = Secp256k1::new();
-        let secret = bitcoin::secp256k1::SecretKey::from_slice(&[2u8; 32]).unwrap();
-        let private_key = PrivateKey::new(secret, bitcoin::Network::Testnet);
-        let keypair = Keypair::from_secret_key(&secp, &private_key.inner);
-        let (internal_key, _) = keypair.x_only_public_key();
-        let source = bitcoin::Address::p2tr(&secp, internal_key, None, bitcoin::Network::Testnet);
-
-        let txids = [
-            Txid::from_str(&"11".repeat(32)).unwrap(),
-            Txid::from_str(&"22".repeat(32)).unwrap(),
-        ];
-        let values = [50_000, 75_000];
-        let mut used_utxo = Usedutxo::default();
-        let input = txids
-            .iter()
-            .zip(values)
-            .enumerate()
-            .map(|(vout, (txid, value))| {
-                used_utxo.insert(
-                    format!("{txid}-{vout}"),
-                    Utxo {
-                        txid: txid.to_string(),
-                        vout: vout as u32,
-                        value,
-                        confirmations: 1,
-                        selected: true,
-                    },
-                );
-                TxIn {
-                    previous_output: OutPoint::new(*txid, vout as u32),
-                    ..Default::default()
-                }
-            })
-            .collect();
-        let mut tx = Transaction {
-            version: Version::TWO,
-            lock_time: LockTime::ZERO,
-            input,
-            output: vec![TxOut {
-                value: Amount::from_sat(120_000),
-                script_pubkey: ScriptBuf::new(),
-            }],
-        };
-
-        BtcSignature::new(&private_key.to_wif(), used_utxo)
-            .unwrap()
-            .sign(BtcAddressType::P2tr, &mut tx, &source.script_pubkey())
-            .unwrap();
-
-        assert!(tx.input.iter().all(|input| input.witness.len() == 1));
-        assert!(
-            tx.input
-                .iter()
-                .all(|input| input.witness.iter().next().unwrap().len() == 64)
-        );
+        let _ = secp;
     }
 }
 
