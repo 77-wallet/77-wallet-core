@@ -5,5 +5,6 @@ pub mod operations;
 mod params;
 pub use params::*;
 pub mod protocol;
+pub use protocol::account::SolAccountType;
 mod provider;
 pub use provider::*;
