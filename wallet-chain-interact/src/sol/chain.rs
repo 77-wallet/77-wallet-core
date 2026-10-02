@@ -8,7 +8,7 @@ use crate::{
     BillResourceConsume, QueryTransactionResult,
     sol::{
         consts,
-        protocol::{Response, transaction::SimValue},
+        protocol::{Response, account::SolAccountType, transaction::SimValue},
     },
     types::{ChainPrivateKey, MultisigSignResp},
 };
@@ -44,6 +44,13 @@ impl SolanaChain {
             let balance = self.provider.balance(addr).await?;
             Ok(U256::from(balance.value))
         }
+    }
+
+    /// Resolve the semantic type of an account, including durable nonce state.
+    pub async fn account_type(&self, addr: &str) -> crate::Result<SolAccountType> {
+        let pubkey = wallet_utils::address::parse_sol_address(addr)?;
+        let response = self.provider.account_info(pubkey).await?;
+        SolAccountType::from_account_info(response.value.as_ref())
     }
 
     pub async fn block_num(&self) -> crate::Result<u64> {
@@ -151,16 +158,18 @@ impl SolanaChain {
         }
         keypair.push(&s);
 
-        // add fee instruction
-        if let Some(fee) = fee_setting {
-            if let Some(priority) = fee.priority_fee_per_compute_unit {
-                let unit_price =
-                    compute_budget::ComputeBudgetInstruction::set_compute_unit_price(priority);
-                let unit_limit = compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(
-                    fee.compute_units_consumed as u32,
-                );
-                instructions.splice(0..0, vec![unit_limit, unit_price]);
-            }
+        if let Some(fee) = fee_setting
+            && let Some(priority) = fee.priority_fee_per_compute_unit
+        {
+            instructions.splice(
+                0..0,
+                vec![
+                    compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(
+                        fee.compute_units_consumed as u32,
+                    ),
+                    compute_budget::ComputeBudgetInstruction::set_compute_unit_price(priority),
+                ],
+            );
         }
 
         let res = if retry > 0 {
