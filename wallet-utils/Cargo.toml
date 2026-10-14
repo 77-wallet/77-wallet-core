@@ -42,8 +42,7 @@ libsecp256k1 = "0.6"
 
 alloy = { workspace = true }
 solana-sdk = { workspace = true }
-sui-types = { workspace = true }
-# sui_types = { workspace = true }
+sui-sdk-types = { workspace = true }
 
 rust_decimal = { workspace = true }
 percent-encoding = { workspace = true }

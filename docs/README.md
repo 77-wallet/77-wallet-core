@@ -6,6 +6,7 @@ Start here:
 
 - `docs/architecture.md` for crate layering and data flow
 - `docs/modules/README.md` for crate-level guides
+- `docs/ai-execution/README.md` for AI-oriented implementation plans and execution records
 - `docs/codex/testing.md` for test scope and validation guidance
 - `docs/codex/checklists/pr-definition-of-done.md` for PR acceptance criteria
 - `docs/codex/commit-message.md` for commit formatting rules

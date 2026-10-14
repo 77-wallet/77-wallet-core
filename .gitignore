@@ -11,6 +11,9 @@ PLANS.md
 !/wallet-chain-interact/tests/
 /wallet-chain-interact/tests/*
 !/wallet-chain-interact/tests/sol_metadata.rs
+!/wallet-chain-interact/tests/sui/
+!/wallet-chain-interact/tests/sui/base.rs
+!/wallet-chain-interact/tests/sui/mod.rs
 !/wallet-chain-interact/tests/fixtures/
 /wallet-chain-interact/tests/fixtures/*
 !/wallet-chain-interact/tests/fixtures/usdg_mint.base64

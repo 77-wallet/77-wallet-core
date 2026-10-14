@@ -1,27 +1,34 @@
-use crate::sui::{
-    Provider, builder::SelectCoinHelper, consts::SUI_NATIVE_COIN, protocol::EstimateFeeResp,
-};
+use crate::sui::Provider;
+use crate::sui::builder::{ProgrammableTransactionBuilder, SelectCoinHelper};
+use crate::sui::consts::SUI_NATIVE_COIN;
+use crate::sui::protocol::EstimateFeeResp;
 use alloy::primitives::U256;
-use sui_types::{
-    base_types::SuiAddress,
-    programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::{Command, ProgrammableTransaction, TransactionData},
+use sui_sdk_types::{
+    Address, Command, GasPayment, ProgrammableTransaction, Transaction, TransactionExpiration,
+    TransactionKind, TransferObjects,
 };
 use wallet_utils::address;
 
+#[derive(Debug)]
 pub struct TransferOpt {
-    pub from: SuiAddress,
-    pub to: SuiAddress,
+    pub from: Address,
+    pub to: Address,
     pub amount: u64,
     pub token: Option<String>,
 }
 
 impl TransferOpt {
     pub fn new(from: &str, to: &str, amount: U256, token: Option<String>) -> crate::Result<Self> {
+        let amount =
+            u64::try_from(amount).map_err(|_| crate::sui::error::SuiError::InvalidInput {
+                field: "amount",
+                reason: "exceeds u64".into(),
+            })?;
+
         Ok(Self {
             from: address::parse_sui_address(from)?,
             to: address::parse_sui_address(to)?,
-            amount: amount.to::<u64>(),
+            amount,
             token,
         })
     }
@@ -42,7 +49,12 @@ impl TransferOpt {
         let mut sum = 0u64;
 
         for coin in &all_coin {
-            sum += coin.balance;
+            sum = sum.checked_add(coin.balance).ok_or_else(|| {
+                crate::sui::error::SuiError::TransactionBuild {
+                    stage: "select transfer coins",
+                    reason: "u64 amount overflow".into(),
+                }
+            })?;
             select_coins.push(coin.clone());
             if sum >= self.amount {
                 break;
@@ -77,7 +89,7 @@ impl TransferOpt {
         let coin_type = self.get_coin_type();
 
         // 处理gas_coin
-        if helper.need_extra_coin_pay_gas(&coin_type, gas_fee, self.amount) {
+        if helper.need_extra_coin_pay_gas(&coin_type, gas_fee, self.amount)? {
             let gas_coin = helper
                 .select_gas_coin(gas_fee, provider, &self.from.to_string())
                 .await?;
@@ -92,10 +104,11 @@ impl TransferOpt {
         };
 
         // command
-        let receipt = builder
-            .pure(self.to)
-            .map_err(|e| crate::sui::error::SuiError::MoveError(e.to_string()))?;
-        builder.command(Command::TransferObjects(trans_arg, receipt));
+        let receipt = builder.pure(self.to)?;
+        builder.command(Command::TransferObjects(TransferObjects {
+            objects: trans_arg,
+            address: receipt,
+        }))?;
 
         Ok(builder.finish())
     }
@@ -105,7 +118,7 @@ impl TransferOpt {
         provider: &Provider,
         mut helper: SelectCoinHelper,
         gas: EstimateFeeResp,
-    ) -> crate::Result<TransactionData> {
+    ) -> crate::Result<Transaction> {
         let gas_budget = gas.get_fee();
 
         // 携带费用重新计算
@@ -115,13 +128,17 @@ impl TransferOpt {
 
         let gas_payment = helper.gas_obj_ref();
 
-        let tx_data = TransactionData::new_programmable(
-            self.from,
-            gas_payment,
-            pt,
-            gas_budget,
-            gas.gas_price,
-        );
+        let tx_data = Transaction {
+            kind: TransactionKind::ProgrammableTransaction(pt),
+            sender: self.from,
+            gas_payment: GasPayment {
+                objects: gas_payment,
+                owner: self.from,
+                price: gas.gas_price,
+                budget: gas_budget,
+            },
+            expiration: TransactionExpiration::None,
+        };
 
         Ok(tx_data)
     }

@@ -1,239 +1,153 @@
-use super::{
-    TransRespOpt,
-    protocol::{CheckpointResult, SuiDenyStatus},
+use super::error::SuiError;
+use super::protocol::{
+    CheckpointResult, SuiBalance, SuiCoin, SuiCoinMetadata, SuiDenyStatus, SuiObject,
+    SuiOwnedObject, SuiOwnedObjectsPage, SuiPackage, SuiQueriedTransaction, SuiSimulation,
 };
-use serde_json::json;
-use sui_json_rpc_types::{
-    Balance, Coin, CoinPage, DevInspectResults, DryRunTransactionBlockResponse, ObjectsPage,
-    SuiCoinMetadata, SuiMoveNormalizedModule, SuiObjectResponse, SuiTransactionBlockResponse,
+use std::collections::{HashMap, HashSet};
+use sui_rpc::Client as GrpcClient;
+use sui_rpc::field::{FieldMask, FieldMaskUtil};
+use sui_rpc::proto::sui::rpc::v2::{
+    BatchGetTransactionsRequest, GetBalanceRequest, GetCoinInfoRequest, GetEpochRequest,
+    GetObjectRequest, GetPackageRequest, GetServiceInfoRequest, GetTransactionRequest,
+    ListOwnedObjectsRequest, ListOwnedObjectsResponse, SimulateTransactionRequest,
 };
-use sui_types::transaction::{ProgrammableTransaction, TransactionData, TransactionKind};
-use sui_types::{
-    Identifier, SUI_DENY_LIST_OBJECT_ID, SUI_FRAMEWORK_PACKAGE_ID,
-    base_types::{ObjectID, ObjectRef, SequenceNumber},
-    object::Owner,
-    programmable_transaction_builder::ProgrammableTransactionBuilder,
-    transaction::ObjectArg,
-};
-use wallet_transport::{client::RpcClient, types::JsonRpcParams};
+use sui_sdk_types::{Address, Digest, ProgrammableTransaction, Transaction};
+use tonic::metadata::{Ascii, MetadataKey, MetadataValue};
 
-// Sui changed this field from `mutable: bool` to
-// `mutability: SharedObjectMutability`. Its BCS representation remains
-// backward compatible, so construct it through that stable representation.
-#[allow(dead_code)]
-#[derive(serde::Serialize)]
-enum CompatibleObjectArg {
-    ImmOrOwnedObject(ObjectRef),
-    SharedObject {
-        id: ObjectID,
-        initial_shared_version: SequenceNumber,
-        mutable: bool,
-    },
-    Receiving(ObjectRef),
-}
-
-fn immutable_shared_object_arg(
-    id: ObjectID,
-    initial_shared_version: SequenceNumber,
-) -> crate::Result<ObjectArg> {
-    let compatible = CompatibleObjectArg::SharedObject {
-        id,
-        initial_shared_version,
-        mutable: false,
-    };
-    let bytes = bcs::to_bytes(&compatible)
-        .map_err(|e| crate::Error::Other(format!("encode shared object argument: {e}")))?;
-    bcs::from_bytes(&bytes)
-        .map_err(|e| crate::Error::Other(format!("decode shared object argument: {e}")))
-}
+mod mapping;
+mod request;
+#[cfg(test)]
+mod tests;
+use mapping::{
+    map_checkpoint, map_checkpoint_height, map_execution_result, map_object_response, map_package,
+    map_reference_gas_price, map_simulation, map_transaction_batch, map_transaction_response,
+};
+use request::{
+    checkpoint_request, coin_list_request, execution_request, full_simulation_request,
+    kind_simulation_request, parse_object_type_filter, transaction_read_mask,
+};
 
 pub struct Provider {
-    client: RpcClient,
+    pub grpc_client: GrpcClient,
+}
+
+fn rpc_error(operation: &'static str, status: tonic::Status) -> crate::Error {
+    SuiError::transport(operation, status).into()
+}
+
+fn resource_error(
+    operation: &'static str,
+    resource: &'static str,
+    id: &str,
+    status: tonic::Status,
+) -> crate::Error {
+    if status.code() == tonic::Code::NotFound {
+        SuiError::NotFound {
+            resource,
+            id: id.to_string(),
+        }
+        .into()
+    } else {
+        rpc_error(operation, status)
+    }
+}
+
+fn submission_error(digest: String, status: tonic::Status) -> crate::Error {
+    match status.code() {
+        tonic::Code::Cancelled
+        | tonic::Code::Unknown
+        | tonic::Code::DeadlineExceeded
+        | tonic::Code::ResourceExhausted
+        | tonic::Code::Aborted
+        | tonic::Code::Internal
+        | tonic::Code::Unavailable => SuiError::SubmissionOutcomeUnknown {
+            digest: Some(digest),
+            code: status.code(),
+            message: status.message().to_string(),
+        },
+        _ => SuiError::transport("execute transaction", status),
+    }
+    .into()
+}
+
+fn parse_address(value: &str, field: &'static str) -> crate::Result<Address> {
+    wallet_utils::address::parse_sui_address(value).map_err(|error| {
+        SuiError::InvalidInput {
+            field,
+            reason: error.to_string(),
+        }
+        .into()
+    })
+}
+
+fn parse_digest(value: &str, field: &'static str) -> crate::Result<String> {
+    value
+        .parse::<Digest>()
+        .map(|digest| digest.to_string())
+        .map_err(|error| {
+            SuiError::InvalidInput {
+                field,
+                reason: error.to_string(),
+            }
+            .into()
+        })
+}
+
+fn collect_coin_page(
+    response: ListOwnedObjectsResponse,
+    seen_tokens: &mut HashSet<Vec<u8>>,
+    coins: &mut Vec<SuiCoin>,
+) -> crate::Result<Option<Vec<u8>>> {
+    let next = response.next_page_token.map(|token| token.to_vec());
+    if let Some(token) = &next {
+        if token.is_empty() || !seen_tokens.insert(token.clone()) {
+            return Err(SuiError::invalid_response(
+                "list owned coins",
+                "next_page_token",
+                "repeated or empty token",
+            )
+            .into());
+        }
+    }
+    for object in response.objects {
+        coins.push(object.try_into()?);
+    }
+    Ok(next)
 }
 
 impl Provider {
-    pub fn new(rpc_client: RpcClient) -> Self {
-        Self { client: rpc_client }
-    }
-
-    pub async fn balance(&self, addr: &str, coin_type: &str) -> crate::Result<Balance> {
-        // 将字符串地址转换为 SuiAddress 类型
-        let parsed_addr = wallet_utils::address::parse_sui_address(addr)?;
-        let params = JsonRpcParams::default()
-            .method("suix_getBalance")
-            .params(json!([parsed_addr.to_string(), coin_type])); // 明确指定 SUI 类型
-
-        Ok(self.client.invoke_request(params).await?)
-    }
-
-    pub async fn latest_block(&self) -> crate::Result<String> {
-        let params: JsonRpcParams<()> = JsonRpcParams::default()
-            .method("sui_getLatestCheckpointSequenceNumber")
-            .no_params();
-
-        Ok(self.client.invoke_request(params).await?)
-    }
-
-    pub async fn query_tx_info(
-        &self,
-        digest: &str,
-        opt: TransRespOpt,
-    ) -> crate::Result<SuiTransactionBlockResponse> {
-        let params = JsonRpcParams::default()
-            .method("sui_getTransactionBlock")
-            .params(json!([digest, opt]));
-
-        Ok(self.client.invoke_request(params).await?)
-    }
-
-    pub async fn get_coin_metadata(&self, coin_type: &str) -> crate::Result<SuiCoinMetadata> {
-        let params = JsonRpcParams::default()
-            .method("suix_getCoinMetadata")
-            .params(json!([coin_type]));
-
-        Ok(self.client.invoke_request(params).await?)
-    }
-
-    pub async fn get_reference_gas_price(&self) -> crate::Result<u64> {
-        let params: JsonRpcParams<()> = JsonRpcParams::default()
-            .method("suix_getReferenceGasPrice")
-            .no_params();
-
-        let gas: String = self.client.invoke_request(params).await?;
-        let gas_price = wallet_utils::parse_func::u64_from_str(&gas)?;
-        Ok(gas_price)
-    }
-
-    pub async fn get_owned_objects(
-        &self,
-        addr: &str,
-        filter: Option<serde_json::Value>,
-        cursor: Option<String>,
-        limit: Option<u64>,
-    ) -> crate::Result<ObjectsPage> {
-        let params = JsonRpcParams::default()
-            .method("suix_getOwnedObjects")
-            .params(json!([
-                addr,
-                {
-                    "filter": filter,
-                    "options": {
-                        "showType": true,
-                        "showContent": true
-                    }
-                },
-                cursor,
-                limit
-            ]));
-        let res = self.client.invoke_request(params).await?;
-        Ok(res)
-    }
-
-    pub async fn get_object_by_id(&self, id: &str) -> crate::Result<SuiObjectResponse> {
-        let params = JsonRpcParams::default()
-            .method("sui_getObject")
-            .params(json!([id]));
-        let res = self.client.invoke_request(params).await?;
-        Ok(res)
-    }
-
-    async fn get_object_with_owner(&self, id: &str) -> crate::Result<SuiObjectResponse> {
-        let params = JsonRpcParams::default()
-            .method("sui_getObject")
-            .params(json!([id, { "showOwner": true }]));
-        Ok(self.client.invoke_request(params).await?)
-    }
-
     pub async fn coin_deny_status(
         &self,
         coin_type: &str,
         owner: &str,
     ) -> crate::Result<SuiDenyStatus> {
         let coin_type = wallet_utils::address::parse_sui_type_tag(coin_type)?;
-        let owner = wallet_utils::address::parse_sui_address(owner)?;
+        let owner = parse_address(owner, "owner")?;
 
-        let deny_list = self
-            .get_object_with_owner(&SUI_DENY_LIST_OBJECT_ID.to_string())
-            .await?;
-        let deny_list = deny_list.data.ok_or_else(|| {
-            crate::Error::Other("Sui deny-list object 0x403 was not found".to_string())
-        })?;
-        let initial_shared_version = match deny_list.owner {
-            Some(Owner::Shared {
-                initial_shared_version,
-            }) => initial_shared_version,
-            other => {
-                return Err(crate::Error::Other(format!(
-                    "Sui deny-list object 0x403 is not shared: {other:?}"
-                )));
-            }
-        };
-
-        let mut builder = ProgrammableTransactionBuilder::new();
-        let deny_list_arg = builder
-            .obj(immutable_shared_object_arg(
-                SUI_DENY_LIST_OBJECT_ID,
-                initial_shared_version,
-            )?)
-            .map_err(|e| crate::Error::Other(format!("build deny-list argument: {e}")))?;
-        let owner_arg = builder
-            .pure(owner)
-            .map_err(|e| crate::Error::Other(format!("build owner argument: {e}")))?;
-        let module = Identifier::new("coin")
-            .map_err(|e| crate::Error::Other(format!("invalid Move module: {e}")))?;
-
-        for function in [
-            "deny_list_v2_contains_current_epoch",
-            "deny_list_v2_contains_next_epoch",
-        ] {
-            let function = Identifier::new(function)
-                .map_err(|e| crate::Error::Other(format!("invalid Move function: {e}")))?;
-            builder.programmable_move_call(
-                SUI_FRAMEWORK_PACKAGE_ID,
-                module.clone(),
-                function,
-                vec![coin_type.clone()],
-                vec![deny_list_arg, owner_arg],
-            );
-        }
-
-        let gas_price = self.get_reference_gas_price().await?;
-        let result = self
-            .dev_inspect_transaction(&owner.to_string(), builder.finish(), gas_price)
-            .await?;
-        if let Some(error) = result.error {
-            return Err(crate::Error::Other(format!(
-                "inspect Sui deny-list failed: {error}"
-            )));
-        }
-
-        let results = result.results.ok_or_else(|| {
-            crate::Error::Other("Sui deny-list inspection returned no results".to_string())
-        })?;
-        if results.len() != 2 {
-            return Err(crate::Error::Other(format!(
-                "Sui deny-list inspection returned {} results, expected 2",
-                results.len()
-            )));
-        }
-
-        let parse_bool = |index: usize, label: &str| -> crate::Result<bool> {
-            let bytes = results[index]
-                .return_values
-                .first()
-                .map(|(bytes, _)| bytes)
-                .ok_or_else(|| {
-                    crate::Error::Other(format!("Sui deny-list {label} query returned no value"))
-                })?;
-            bcs::from_bytes::<bool>(bytes).map_err(|e| {
-                crate::Error::Other(format!("invalid Sui deny-list {label} result: {e}"))
-            })
-        };
-
-        Ok(SuiDenyStatus {
-            current_epoch: parse_bool(0, "current epoch")?,
-            next_epoch: parse_bool(1, "next epoch")?,
-        })
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .get_object(request::deny_list_object_request())
+            .await
+            .map_err(|status| {
+                resource_error(
+                    "get deny-list object",
+                    "deny-list object",
+                    request::DENY_LIST_OBJECT_ID,
+                    status,
+                )
+            })?
+            .into_inner();
+        let version = mapping::map_deny_list_version(response)?;
+        let tx = request::deny_list_transaction(coin_type, owner, version)?;
+        let request = request::deny_list_simulation_request(owner, tx);
+        let response = client
+            .execution_client()
+            .simulate_transaction(request)
+            .await
+            .map_err(|status| rpc_error("simulate deny-list query", status))?
+            .into_inner();
+        Ok(mapping::map_deny_status(response)?)
     }
 
     pub async fn black_address(&self, coin_type: &str, owner: &str) -> crate::Result<bool> {
@@ -243,26 +157,192 @@ impl Provider {
             .is_blacklisted())
     }
 
+    /// Configures a lazy full-node gRPC connection.
+    /// Optional headers are caller-defined ASCII gRPC metadata.
+    /// Must be called inside a Tokio runtime.
+    pub fn new(
+        full_node_url: &str,
+        headers: Option<HashMap<String, String>>,
+    ) -> crate::Result<Self> {
+        let mut grpc_client =
+            GrpcClient::new(full_node_url).map_err(|error| SuiError::InvalidInput {
+                field: "full_node_url",
+                reason: error.to_string(),
+            })?;
+
+        if let Some(headers) = headers {
+            let mut interceptor = sui_rpc::client::HeadersInterceptor::new();
+            for (name, value) in headers {
+                let name =
+                    name.parse::<MetadataKey<Ascii>>()
+                        .map_err(|error| SuiError::InvalidInput {
+                            field: "headers",
+                            reason: error.to_string(),
+                        })?;
+                let value = value.parse::<MetadataValue<Ascii>>().map_err(|error| {
+                    SuiError::InvalidInput {
+                        field: "headers",
+                        reason: error.to_string(),
+                    }
+                })?;
+                interceptor.headers_mut().insert(name, value);
+            }
+            grpc_client = grpc_client.with_headers(interceptor);
+        }
+
+        Ok(Self { grpc_client })
+    }
+
+    pub async fn balance(&self, addr: &str, coin_type: &str) -> crate::Result<SuiBalance> {
+        let parsed_addr = parse_address(addr, "owner")?;
+        let mut client = self.grpc_client.clone();
+        let mut request = GetBalanceRequest::default();
+        request.owner = Some(parsed_addr.to_string());
+        request.coin_type = Some(coin_type.to_string());
+
+        let response = client
+            .state_client()
+            .get_balance(request)
+            .await
+            .map_err(|status| rpc_error("get balance", status))?
+            .into_inner();
+        Ok(response.try_into()?)
+    }
+
+    pub async fn latest_block(&self) -> crate::Result<String> {
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .get_service_info(GetServiceInfoRequest::default())
+            .await
+            .map_err(|status| rpc_error("get service info", status))?
+            .into_inner();
+
+        Ok(map_checkpoint_height(response)?.to_string())
+    }
+
+    pub async fn query_tx_info(&self, digest: &str) -> crate::Result<SuiQueriedTransaction> {
+        let digest = parse_digest(digest, "transaction_digest")?;
+        let mut request = GetTransactionRequest::default();
+        request.digest = Some(digest.clone());
+        request.read_mask = Some(transaction_read_mask());
+
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .get_transaction(request)
+            .await
+            .map_err(|status| resource_error("get transaction", "transaction", &digest, status))?
+            .into_inner();
+        Ok(map_transaction_response(response, &digest)?)
+    }
+
+    pub async fn get_coin_metadata(&self, coin_type: &str) -> crate::Result<SuiCoinMetadata> {
+        let mut client = self.grpc_client.clone();
+        let mut request = GetCoinInfoRequest::default();
+        request.coin_type = Some(coin_type.to_string());
+
+        let response = client
+            .state_client()
+            .get_coin_info(request)
+            .await
+            .map_err(|status| resource_error("get coin info", "coin metadata", coin_type, status))?
+            .into_inner();
+        Ok(response.try_into()?)
+    }
+
+    pub async fn get_reference_gas_price(&self) -> crate::Result<u64> {
+        let mut request = GetEpochRequest::default();
+        request.read_mask = Some(FieldMask::from_paths(["reference_gas_price"]));
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .get_epoch(request)
+            .await
+            .map_err(|status| rpc_error("get epoch", status))?
+            .into_inner();
+        Ok(map_reference_gas_price(response)?)
+    }
+
+    pub async fn get_owned_objects(
+        &self,
+        addr: &str,
+        filter: Option<serde_json::Value>,
+        cursor: Option<Vec<u8>>,
+        limit: Option<u32>,
+    ) -> crate::Result<SuiOwnedObjectsPage> {
+        let object_type = parse_object_type_filter(filter)?;
+        let parsed_addr = parse_address(addr, "owner")?;
+        let mut client = self.grpc_client.clone();
+        let mut request = ListOwnedObjectsRequest::default();
+        request.owner = Some(parsed_addr.to_string());
+        request.object_type = object_type;
+        request.page_token = cursor.map(Into::into);
+        request.page_size = limit;
+        request.read_mask = Some(FieldMask::from_paths([
+            "object_id",
+            "version",
+            "digest",
+            "object_type",
+        ]));
+        let response = client
+            .state_client()
+            .list_owned_objects(request)
+            .await
+            .map_err(|status| rpc_error("list owned objects", status))?
+            .into_inner();
+        let data = response
+            .objects
+            .into_iter()
+            .map(|object| SuiOwnedObject::try_from(object).map_err(Into::into))
+            .collect::<crate::Result<Vec<_>>>()?;
+        Ok(SuiOwnedObjectsPage {
+            data,
+            next_cursor: response.next_page_token.map(|token| token.to_vec()),
+        })
+    }
+
+    pub async fn get_object_by_id(&self, id: &str) -> crate::Result<SuiObject> {
+        let id = id
+            .parse::<Address>()
+            .map_err(|error| SuiError::InvalidInput {
+                field: "object_id",
+                reason: error.to_string(),
+            })?;
+        let mut request = GetObjectRequest::default();
+        request.object_id = Some(id.to_string());
+        request.read_mask = Some(FieldMask::from_paths(["object_id", "version", "digest"]));
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .get_object(request)
+            .await
+            .map_err(|status| resource_error("get object", "object", &id.to_string(), status))?
+            .into_inner();
+        Ok(map_object_response(response, &id.to_string())?)
+    }
+
     pub async fn get_all_coins_by_owner(
         &self,
         addr: &str,
         coin_type: &str,
-    ) -> crate::Result<Vec<Coin>> {
-        let mut cursor: Option<String> = None;
+    ) -> crate::Result<Vec<SuiCoin>> {
+        let parsed_addr = parse_address(addr, "owner")?;
+        let mut client = self.grpc_client.clone();
+        let mut state = client.state_client();
+        let mut cursor = None;
+        let mut seen_tokens = HashSet::new();
         let mut all_coins = Vec::new();
+
         loop {
-            let params = JsonRpcParams::default()
-                .method("suix_getCoins")
-                .params(json!([
-                    addr, coin_type, cursor, 50 // 每页最多50个
-                ]));
-
-            let page: CoinPage = self.client.invoke_request(params).await?;
-            all_coins.extend(page.data);
-
-            if page.has_next_page {
-                cursor = page.next_cursor;
-            } else {
+            let request = coin_list_request(&parsed_addr.to_string(), coin_type, cursor);
+            let page = state
+                .list_owned_objects(request)
+                .await
+                .map_err(|status| rpc_error("list owned coins", status))?
+                .into_inner();
+            cursor = collect_coin_page(page, &mut seen_tokens, &mut all_coins)?;
+            if cursor.is_none() {
                 break;
             }
         }
@@ -275,174 +355,101 @@ impl Provider {
         sender: &str,
         tx: ProgrammableTransaction,
         gas_price: u64,
-    ) -> crate::Result<DevInspectResults> {
-        let tx = TransactionKind::programmable(tx);
-
-        let boc_str = wallet_utils::serde_func::bcs_to_bytes(&tx)?;
-        let boc_str = wallet_utils::bytes_to_base64(&boc_str);
-
-        let params = JsonRpcParams::default()
-            .method("sui_devInspectTransactionBlock")
-            .params(json!([sender, boc_str, gas_price.to_string()]));
-
-        Ok(self.client.invoke_request(params).await?)
+    ) -> crate::Result<SuiSimulation> {
+        let request = kind_simulation_request(sender, tx, gas_price)?;
+        self.simulate_transaction(request).await
     }
 
-    pub async fn dry_run_transaction(
-        &self,
-        tx_data: &TransactionData,
-    ) -> crate::Result<DryRunTransactionBlockResponse> {
-        let tx_data = wallet_utils::serde_func::bcs_to_bytes(tx_data)?;
-        let tx_data = wallet_utils::bytes_to_base64(&tx_data);
-        let params = JsonRpcParams::default()
-            .method("sui_dryRunTransactionBlock")
-            .params(json!([tx_data]));
+    pub async fn dry_run_transaction(&self, tx_data: &Transaction) -> crate::Result<SuiSimulation> {
+        let request = full_simulation_request(tx_data)?;
+        self.simulate_transaction(request).await
+    }
 
-        Ok(self.client.invoke_request(params).await?)
+    async fn simulate_transaction(
+        &self,
+        request: SimulateTransactionRequest,
+    ) -> crate::Result<SuiSimulation> {
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .execution_client()
+            .simulate_transaction(request)
+            .await
+            .map_err(|status| rpc_error("simulate transaction", status))?
+            .into_inner();
+        Ok(map_simulation(response)?)
     }
 
     pub async fn get_check_point(&self, check_point: &str) -> crate::Result<CheckpointResult> {
-        let params = JsonRpcParams::default()
-            .method("sui_getCheckpoint")
-            .params(json!([check_point]));
-
-        Ok(self.client.invoke_request(params).await?)
+        let request = checkpoint_request(check_point)?;
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .get_checkpoint(request)
+            .await
+            .map_err(|status| resource_error("get checkpoint", "checkpoint", check_point, status))?
+            .into_inner();
+        Ok(map_checkpoint(response, check_point)?)
     }
 
     pub async fn get_multi_trans(
         &self,
         digests: &[String],
-        opt: TransRespOpt,
-    ) -> crate::Result<Vec<SuiTransactionBlockResponse>> {
-        let params = JsonRpcParams::default()
-            .method("sui_multiGetTransactionBlocks")
-            .params(json!([digests, opt]));
-
-        Ok(self.client.invoke_request(params).await?)
+    ) -> crate::Result<Vec<SuiQueriedTransaction>> {
+        if digests.is_empty() {
+            return Ok(Vec::new());
+        }
+        let digests = digests
+            .iter()
+            .map(|digest| parse_digest(digest, "transaction_digest"))
+            .collect::<crate::Result<Vec<_>>>()?;
+        let mut request = BatchGetTransactionsRequest::default();
+        request.digests = digests.clone();
+        request.read_mask = Some(transaction_read_mask());
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .ledger_client()
+            .batch_get_transactions(request)
+            .await
+            .map_err(|status| rpc_error("batch get transactions", status))?
+            .into_inner();
+        Ok(map_transaction_batch(response, &digests)?)
     }
 
     pub async fn send_transaction(
         &self,
-        tx_bytes_b64: String,
-        signatures_b64: Vec<String>,
-    ) -> crate::Result<SuiTransactionBlockResponse> {
-        let params = JsonRpcParams::default()
-            .method("sui_executeTransactionBlock")
-            .params(json!([
-                tx_bytes_b64,
-                signatures_b64,
-                {
-                    "showEffects": true,
-                    "showEvents": true
-                }
-            ]));
-
-        Ok(self.client.invoke_request(params).await?)
-    }
-
-    pub async fn get_normalized_move_modules_by_package_id(
-        &self,
-        package_id: &str,
-    ) -> crate::Result<std::collections::BTreeMap<String, SuiMoveNormalizedModule>> {
-        let params = JsonRpcParams::default()
-            .method("sui_getNormalizedMoveModulesByPackage")
-            .params(json!([package_id]));
-
-        Ok(self.client.invoke_request(params).await?)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::sui::SuiChain;
-    use wallet_utils::init_test_log;
-
-    // Sui DevNet 节点地址
-    // const DEVNET_URL: &str = "https://fullnode.devnet.sui.io:443";
-    const TESTNET_URL: &str = "https://fullnode.testnet.sui.io:443";
-    // 测试用地址（Sui DevNet 水龙头示例地址）
-    const TEST_ADDRESS: &str = "0x885f29a4f1b4d63822728a1b1811d0278c4e25f27d3754ddd387cd34f9482d0f";
-    const TEST_COIN_TYPE: &str = "0x2::sui::SUI";
-
-    fn get_chain() -> SuiChain {
-        init_test_log();
-        // sui 测试网络
-        let rpc = TESTNET_URL.to_string();
-
-        let header = None;
-        let client = RpcClient::new(&rpc, header, None).unwrap();
-        let provider = Provider::new(client);
-        let sui = SuiChain::new(provider).unwrap();
-        sui
-    }
-
-    #[tokio::test]
-    async fn test_real_sui_balance() {
-        let sui = get_chain();
-
-        // 带重试的查询（应对网络波动）
-        let balance = sui
-            .balance(TEST_ADDRESS, Some(TEST_COIN_TYPE.to_string()))
+        tx_bytes: Vec<u8>,
+        signatures: Vec<Vec<u8>>,
+    ) -> crate::Result<String> {
+        let (request, digest) = execution_request(tx_bytes, signatures)?;
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .execution_client()
+            .execute_transaction(request)
             .await
-            .unwrap();
-        println!("balance: {}", balance);
+            .map_err(|status| submission_error(digest.clone(), status))?
+            .into_inner();
+        Ok(map_execution_result(response, &digest)?)
     }
 
-    #[tokio::test]
-    async fn test_estimate_gas_price() {
-        let sui = get_chain();
-        let gas = sui.provider.get_reference_gas_price().await.unwrap();
-        println!("gas: {}", gas);
-        assert!(gas > 0);
-    }
-
-    #[tokio::test]
-    async fn test_get_object_by_id() {
-        let sui = get_chain();
-        let object = sui.provider.get_object_by_id(TEST_ADDRESS).await.unwrap();
-        println!("object: {:#?}", object);
-    }
-
-    #[tokio::test]
-    async fn test_latest_block() {
-        let sui = get_chain();
-        let block = sui.provider.latest_block().await.unwrap();
-        println!("block: {:#?}", block);
-    }
-
-    #[tokio::test]
-    async fn test_get_normalized_move_modules_by_package_id() {
-        let sui = get_chain();
-        // let package = ""
-        let modules = sui
-            .provider
-            .get_normalized_move_modules_by_package_id(
-                "0x8190b041122eb492bf63cb464476bd68c6b7e570a4079645a8b28732b6197a82",
-            )
+    /// Returns package modules with optional bytecode supplied by the gRPC service.
+    pub async fn get_package_modules(&self, package_id: &str) -> crate::Result<SuiPackage> {
+        let package_id = package_id
+            .parse::<Address>()
+            .map_err(|error| SuiError::InvalidInput {
+                field: "package_id",
+                reason: error.to_string(),
+            })?;
+        let mut request = GetPackageRequest::default();
+        request.package_id = Some(package_id.to_string());
+        let mut client = self.grpc_client.clone();
+        let response = client
+            .package_client()
+            .get_package(request)
             .await
-            .unwrap();
-        // println!("modules: {:#?}", modules);
-
-        for (module_name, module) in modules {
-            println!("module_name: {}", module_name);
-            println!("module_address: {}", module.address);
-            println!("module_structs: {:#?}", module.structs);
-            println!("module enums: {:#?}", module.enums);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_query_tx_info() {
-        let sui = get_chain();
-
-        let opt = TransRespOpt::default();
-
-        let tx_info = sui
-            .provider
-            .query_tx_info("GdyEZutEWFwJuNj2N9aXB5K2L5L3WsvwDSkxBsCb7y2n", opt)
-            .await
-            .unwrap();
-        println!("tx_info: {:#?}", tx_info);
+            .map_err(|status| {
+                resource_error("get package", "package", &package_id.to_string(), status)
+            })?
+            .into_inner();
+        Ok(map_package(response, package_id)?)
     }
 }

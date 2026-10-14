@@ -337,7 +337,7 @@ mod test {
     use super::ChainObject;
     use crate::instance::eth::EthereumInstance;
     use crate::instance::ton::TonInstance;
-    use wallet_core::{derive::GenDerivation, language::Language, xpriv};
+    use wallet_core::{derive::GenDerivation, xpriv};
     use wallet_types::chain::{
         address::r#type::{AddressType, DOG_ADDRESS_TYPES},
         chain::ChainCode,
@@ -441,13 +441,13 @@ mod test {
 
     #[test]
     fn test_gen() {
-        let phrase = Language::English.gen_phrase(12).unwrap().join(" ");
+        let phrase = "".to_string();
         let password = "";
 
         let xpriv = xpriv::generate_master_key(1, &phrase, password).unwrap();
         let seed = xpriv.1;
 
-        let code = ChainCode::Dogcoin;
+        let code = ChainCode::Sui;
         let address_types = DOG_ADDRESS_TYPES.to_vec();
         let network = network::NetworkKind::Testnet;
 
@@ -457,7 +457,8 @@ mod test {
                 .gen_keypair_with_index_address_type(&seed, 0)
                 .unwrap();
 
-            println!("address {}", keypair.address())
+            println!("address {}", keypair.address());
+            println!("key {}", keypair.private_key().unwrap());
         }
     }
 }

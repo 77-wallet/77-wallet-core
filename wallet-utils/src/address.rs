@@ -114,8 +114,8 @@ pub fn tron_addr_to_eth_addr(tron_addr: &str) -> Result<String, String> {
     Ok(format!("0x{}", hex::encode(eth_bytes)))
 }
 
-pub fn parse_sui_address(address: &str) -> Result<sui_types::base_types::SuiAddress, crate::Error> {
-    sui_types::base_types::SuiAddress::from_str(address.trim()).map_err(|e| {
+pub fn parse_sui_address(address: &str) -> Result<sui_sdk_types::Address, crate::Error> {
+    sui_sdk_types::Address::from_str(address.trim()).map_err(|e| {
         crate::Error::Parse(ParseError::AddressConvertFailed(format!(
             "to_sui_address err:{}:address = {}",
             e, address
@@ -123,46 +123,14 @@ pub fn parse_sui_address(address: &str) -> Result<sui_types::base_types::SuiAddr
     })
 }
 
-pub fn parse_sui_type_tag(s: &str) -> Result<sui_types::TypeTag, crate::Error> {
-    // sui_sdk_types::;
-    sui_types::parse_sui_type_tag(s).map_err(|e| {
+pub fn parse_sui_type_tag(s: &str) -> Result<sui_sdk_types::TypeTag, crate::Error> {
+    sui_sdk_types::TypeTag::from_str(s).map_err(|e| {
         crate::Error::Parse(ParseError::AddressConvertFailed(format!(
             "to_sui_address err:{}:address = {}",
             e, s
         )))
     })
 }
-
-// pub fn parse_sui_module_id(s: &str) -> Result<ModuleId, crate::Error> {
-//     sui_types::parse_sui_module_id(s).map_err(|e| {
-//         crate::Error::Parse(ParseError::AddressConvertFailed(format!(
-//             "to_sui_address err:{}:address = {}",
-//             e, s
-//         )))
-//     })
-// }
-
-// pub fn parse_sui_struct_tag(s: &str) -> Result<sui_sdk::types::TypeTag, crate::Error> {
-//     Ok(sui_sdk::types::parse_sui_struct_tag(s)
-//         .map_err(|e| {
-//             crate::Error::Parse(ParseError::AddressConvertFailed(format!(
-//                 "to_sui_address err:{}:address = {}",
-//                 e, s
-//             )))
-//         })?
-//         .into())
-// }
-
-// pub fn parse_object_id_from_hex(
-//     hex_string: &str,
-// ) -> Result<sui_types::base_types::ObjectID, crate::Error> {
-//     sui_types::base_types::ObjectID::from_hex_literal(hex_string).map_err(|e| {
-//         crate::Error::Parse(ParseError::AddressConvertFailed(format!(
-//             "to_sui_address err:{}:address = {}",
-//             e, hex_string
-//         )))
-//     })
-// }
 
 // pub const BIP32_HARDEN: u32 = 2147483648 (0x80000000)
 // pub const MAX: Self = 2147483647 (0x7FFFFFFF)
@@ -313,7 +281,9 @@ pub fn to_checksum_address(address: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::address::{AccountIndexMap, hex_to_bs58_addr, parse_sui_type_tag};
+    use crate::address::{
+        AccountIndexMap, hex_to_bs58_addr, parse_sui_address, parse_sui_type_tag,
+    };
 
     use super::to_checksum_address;
 
@@ -365,28 +335,21 @@ mod tests {
 
     #[test]
     fn test_parse_sui_address() {
-        let input =
-            "0x1b9e65276fbeab5569a0afb074bb090b9eb867082417b0470a1a04f4be6d2f3a::qtoken::QTOKEN";
-        // let expected = "0x3bAc24b73c7A03C8715697cA1646a6f85B91023a";
-
-        let result = parse_sui_type_tag(input);
-        println!("result = {result:#?}");
-        let tag = result.unwrap();
-        let res = tag.to_canonical_string(true);
-        println!("res = {res}");
-        let res = tag.to_canonical_string(false);
-        println!("res = {res}");
-        // assert_eq!(to_checksum_address(input), expected);
+        let input = " 0x506a6fc25f1c7d52ceb06ea44a3114c9380f8e2029b4356019822f248b49e411 ";
+        let address = parse_sui_address(input).unwrap();
+        assert_eq!(
+            address.to_string(),
+            "0x506a6fc25f1c7d52ceb06ea44a3114c9380f8e2029b4356019822f248b49e411"
+        );
+        assert!(parse_sui_address("not-an-address").is_err());
     }
 
     #[test]
     fn test_parse_sui_type_tag() {
         let input =
-            // "0x1b9e65276fbeab5569a0afb074bb090b9eb867082417b0470a1a04f4be6d2f3a::qtoken::QTOKEN";
-            "0x506a6fc25f1c7d52ceb06ea44a3114c9380f8e2029b4356019822f248b49e411";
-        // let expected = "0x3bAc24b73c7A03C8715697cA1646a6f85B91023a";
-
-        let result = parse_sui_type_tag(input);
-        println!("result = {result:#?}");
+            "0x1b9e65276fbeab5569a0afb074bb090b9eb867082417b0470a1a04f4be6d2f3a::qtoken::QTOKEN";
+        let tag = parse_sui_type_tag(input).unwrap();
+        assert_eq!(tag.to_string(), input);
+        assert!(parse_sui_type_tag("not-a-type-tag").is_err());
     }
 }
