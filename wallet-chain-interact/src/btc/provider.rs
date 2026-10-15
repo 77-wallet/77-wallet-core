@@ -113,7 +113,11 @@ impl Provider {
             return Err(crate::UtxoError::ExceedsMaxFeeRate.into());
         }
 
-        Ok(fee_rate)
+        Ok(if fee_rate.to_sat() == 0 {
+            Amount::from_sat(2)
+        } else {
+            fee_rate
+        })
     }
 
     pub async fn estimate_smart_fee(
