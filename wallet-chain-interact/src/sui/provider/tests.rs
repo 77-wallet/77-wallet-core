@@ -442,3 +442,87 @@ fn scanner_batch_returns_all_fields_or_fails_as_a_whole() {
     response.transactions.push(item);
     assert!(mapping::map_transaction_batch(response, &[digest.clone(), digest]).is_err());
 }
+
+#[test]
+fn scanner_gasless_transfer_preserves_balances_in_single_and_batch_reads() {
+    use sui_rpc::proto::sui::rpc::v2::{
+        BatchGetTransactionsResponse, GetTransactionResponse, GetTransactionResult,
+        get_transaction_result::Result as Item,
+    };
+    let mut tx = scanner_transaction();
+    tx.transaction
+        .as_mut()
+        .unwrap()
+        .gas_payment
+        .as_mut()
+        .unwrap()
+        .price = Some(0);
+    tx.transaction
+        .as_mut()
+        .unwrap()
+        .gas_payment
+        .as_mut()
+        .unwrap()
+        .budget = Some(0);
+    let gas = tx.effects.as_mut().unwrap().gas_used.as_mut().unwrap();
+    gas.computation_cost = Some(1_322_268);
+    gas.storage_cost = Some(0);
+    gas.storage_rebate = Some(1_322_268);
+    let coin = "0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC";
+    tx.balance_changes[0].coin_type = Some(coin.into());
+    tx.balance_changes[0].amount = Some("-241526517".into());
+    let mut recipient = tx.balance_changes[0].clone();
+    recipient.address = Some("0x2".into());
+    recipient.amount = Some("241526517".into());
+    tx.balance_changes.push(recipient);
+    let digest = tx.digest.clone().unwrap();
+    let mut single = GetTransactionResponse::default();
+    single.transaction = Some(tx.clone());
+    let mapped = mapping::map_transaction_response(single, &digest).unwrap();
+    assert_eq!(mapped.gas_price, 0);
+    assert_eq!(mapped.net_gas_usage, 0);
+    assert_eq!(mapped.balance_changes.len(), 2);
+    assert_eq!(mapped.balance_changes[0].coin_type, coin);
+    assert_eq!(mapped.balance_changes[0].amount, -241526517);
+    assert_eq!(mapped.balance_changes[1].amount, 241526517);
+
+    let normal = scanner_transaction();
+    let mut normal = normal;
+    // A different digest ensures batch ordering/correspondence is checked too.
+    normal.digest = Some(Digest::new([9; 32]).to_string());
+    let mut batch = BatchGetTransactionsResponse::default();
+    batch.transactions = [normal.clone(), tx]
+        .into_iter()
+        .map(|tx| {
+            let mut item = GetTransactionResult::default();
+            item.result = Some(Item::Transaction(tx));
+            item
+        })
+        .collect();
+    let results = mapping::map_transaction_batch(batch, &[normal.digest.unwrap(), digest]).unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].gas_price, 1);
+    assert_eq!(results[1], mapped);
+}
+
+#[test]
+fn scanner_transaction_still_rejects_missing_or_overflowing_gas_price() {
+    for price in [None, Some(i64::MAX as u64 + 1)] {
+        let mut tx = scanner_transaction();
+        let digest = tx.digest.clone().unwrap();
+        tx.transaction
+            .as_mut()
+            .unwrap()
+            .gas_payment
+            .as_mut()
+            .unwrap()
+            .price = price;
+        assert!(matches!(
+            mapping::map_transaction(tx, &digest),
+            Err(SuiError::InvalidResponse {
+                field: "transaction.gas_payment.price",
+                ..
+            })
+        ));
+    }
+}

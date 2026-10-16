@@ -368,11 +368,12 @@ pub(super) fn map_transaction(
             })
         })
         .collect::<Result<Vec<_>, SuiError>>()?;
-    if gas_price == 0 || gas_price > i64::MAX as u64 {
+    // Executed gasless transfers can legitimately have a zero gas price.
+    if gas_price > i64::MAX as u64 {
         return Err(invalid(
             "get transaction",
             "transaction.gas_payment.price",
-            "must be between 1 and i64::MAX",
+            "must be between 0 and i64::MAX",
         ));
     }
     Ok(SuiQueriedTransaction {

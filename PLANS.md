@@ -186,3 +186,16 @@ format check, and diff check passed. No live Avalanche RPC was queried.
   existing config edits. Validate `cargo check -p plugin-sui --offline` and
   `cargo test -p plugin-sui --lib --offline`. Stop after offline verification;
   no live RPC, transaction submission, commit, or push.
+
+
+## Sui zero-price transaction reads (2026-10-16)
+
+- Scope: `wallet-chain-interact` Sui transaction mapping and query-result fee
+  extraction only. Accept explicit zero gas prices from executed transactions;
+  preserve missing-field and i64 overflow checks. Preserve balance changes and
+  fees from effects, and report zero price-derived gas units when price is zero.
+- Add offline single/batch mapping and fee-extraction regressions. Validate
+  `cargo test -p wallet-chain-interact --lib sui:: --offline` using the plugins
+  workspace target, then `cargo test -p plugin-sui --lib --offline`.
+- Stop after focused validation and read-only local endpoint checks; no commit,
+  push, transaction submission, or restart of the user's running process.
