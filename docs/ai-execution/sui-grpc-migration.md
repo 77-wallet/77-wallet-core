@@ -338,3 +338,13 @@ JSON-RPC → gRPC 九个批次完成后，又分三批将应用层从 Sui 节点
 失败仍整体返回错误。空余额变更和空 checkpoint contents 交易列表是合法结果。
 新增字段使手动构造这些内部 DTO 的 Rust 调用方需要同步更新 struct literal。
 插件统一复用 Provider 的 full-node 连接，无额外 protobuf/client 依赖。
+
+
+### Executed gasless transfers
+
+Transaction reads accept an explicit gas payment price of zero, as used by Sui
+gasless stablecoin transfers. Balance changes remain part of both single and
+batch results. Query-result fees come from the signed net gas usage in effects;
+price-derived gas units are reported as zero when the declared price is zero.
+Missing gas prices and prices exceeding the supported i64 range still fail
+validation. Reference gas price lookup and transaction construction are unchanged.

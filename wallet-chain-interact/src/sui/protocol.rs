@@ -88,6 +88,7 @@ pub struct SuiQueriedTransaction {
     pub success: bool,
     /// Computation plus storage cost minus storage rebate, in MIST.
     pub net_gas_usage: i64,
+    /// Declared gas price; can be zero for executed gasless transfers.
     pub gas_price: u64,
     /// Owner of the gas payment, which can differ from the transaction sender.
     pub gas_owner: String,

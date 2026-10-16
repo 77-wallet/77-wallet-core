@@ -46,11 +46,7 @@ impl SuiChain {
 
         let transaction_time = u128::from(tx.timestamp_seconds);
         let transaction_fee = Self::extract_gas_used(&tx).ok_or_else(|| {
-            SuiError::invalid_response(
-                "query transaction",
-                "gas_price",
-                "must be non-zero and fit i64",
-            )
+            SuiError::invalid_response("query transaction", "gas_price", "must fit i64")
         })?;
         let status = Self::extract_status(&tx);
         let block_height = u128::from(tx.checkpoint);
@@ -166,10 +162,13 @@ impl SuiChain {
 impl SuiChain {
     pub fn extract_gas_used(resp: &SuiQueriedTransaction) -> Option<(f64, i64)> {
         let gas_price = i64::try_from(resp.gas_price).ok()?;
-        if gas_price == 0 {
-            return None;
-        }
-        let gas_used = resp.net_gas_usage / gas_price;
+        // Gasless transactions have no price-derived gas units. Fees still come
+        // from effects rather than multiplying by the declared gas price.
+        let gas_used = if gas_price == 0 {
+            0
+        } else {
+            resp.net_gas_usage / gas_price
+        };
         Some((resp.net_gas_usage as f64 / SUI_VALUE, gas_used))
     }
 
@@ -315,5 +314,33 @@ mod tests {
             error,
             crate::Error::SignError(message) if message.starts_with("invalid Sui transaction BCS:")
         ));
+    }
+
+    #[test]
+    fn queried_gasless_transaction_preserves_effects_fee_without_dividing_by_zero() {
+        let mut tx = SuiQueriedTransaction {
+            digest: "digest".into(),
+            checkpoint: 42,
+            timestamp_seconds: 1_700_000_000,
+            success: true,
+            net_gas_usage: 0,
+            gas_price: 0,
+            gas_owner: TEST_ADDRESS.into(),
+            balance_changes: vec![],
+        };
+        assert_eq!(SuiChain::extract_gas_used(&tx), Some((0.0, 0)));
+        tx.net_gas_usage = -100;
+        assert_eq!(
+            SuiChain::extract_gas_used(&tx),
+            Some((-100.0 / SUI_VALUE, 0))
+        );
+        tx.gas_price = 1000;
+        tx.net_gas_usage = 2000;
+        assert_eq!(
+            SuiChain::extract_gas_used(&tx),
+            Some((2000.0 / SUI_VALUE, 2))
+        );
+        tx.gas_price = i64::MAX as u64 + 1;
+        assert_eq!(SuiChain::extract_gas_used(&tx), None);
     }
 }
