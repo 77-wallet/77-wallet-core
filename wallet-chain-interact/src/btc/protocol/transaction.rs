@@ -156,7 +156,7 @@ impl ApiTransaction {
             .iter()
             .filter(|v| v.is_address)
             .flat_map(|v| {
-                let addresses = v.addresses.clone();
+                let addresses = v.addresses.clone().unwrap_or_default();
                 let value = v.value.parse::<u64>().unwrap_or_default(); // 假设v.value 是一个包含金额的字段
                 addresses
                     .into_iter()
@@ -192,6 +192,38 @@ pub struct ApiVin {
 pub struct ApiVout {
     pub value: String,
     pub n: u64,
-    pub addresses: Vec<String>,
+    pub addresses: Option<Vec<String>>,
     pub is_address: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ApiTransaction;
+
+    #[test]
+    fn api_transaction_accepts_outputs_without_addresses() {
+        let tx: ApiTransaction = serde_json::from_value(serde_json::json!({
+            "txid": "cfab14a96746465d205fa543e0daa83fd25aaf6999051d9e7d39ed96da2d0221",
+            "vin": [],
+            "vout": [
+                {"value": "3276", "n": 0, "addresses": null, "isAddress": false},
+                {"value": "3276", "n": 1, "addresses": [], "isAddress": false},
+                {"value": "3276", "n": 2, "isAddress": false},
+                {"value": "547", "n": 3, "addresses": ["recipient"], "isAddress": true},
+                {"value": "3276", "n": 4, "addresses": null, "isAddress": true}
+            ],
+            "blockHeight": 972301,
+            "confirmations": 1,
+            "blockTime": 0,
+            "value": "13651",
+            "valueIn": "14116",
+            "fees": "465"
+        }))
+        .expect("null, empty, and missing output addresses should be accepted");
+
+        let recipients = tx.get_to();
+        assert_eq!(recipients.len(), 1);
+        assert_eq!(recipients[0].address, "recipient");
+        assert_eq!(recipients[0].value, 547);
+    }
 }
