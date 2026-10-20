@@ -20,6 +20,35 @@ Evidence: both focused BTC signature tests passed, the offline
 restricted local socket binding and live Sui RPC access. Workspace formatting
 also reports two pre-existing EVM formatting differences outside this scope.
 
+## Remove blacklist gas-price round trip (2026-10-13)
+
+- Scope: `wallet-chain-interact` Sui blacklist request only. Omit gas payment
+  in the structured, checks-disabled simulation and let the node resolve its
+  gas defaults. Remove the provider's extra reference-gas-price RPC.
+- Preserve existing user edits and normal fee-estimation requests.
+- Validation: focused offline provider tests, crate library check, changed-file
+  rustfmt check and diff check. Stop with changes uncommitted; no live RPC.
+- Evidence: six focused offline tests passed, including gas-payment omission
+  and preservation of explicit prices for fee simulations. Crate library check,
+  changed-file rustfmt check and diff check passed; live RPC was not exercised.
+
+## Sui blacklist rebase resolution (2026-10-13)
+
+- Scope: one batch in `wallet-chain-interact`, Sui provider only. Preserve the
+  gRPC migration and port dev's `coin_deny_status` / `black_address` using
+  `GetObject` owner metadata and `SimulateTransaction` command outputs.
+- Preserve current/next epoch semantics. Missing or malformed responses and
+  simulation failures must return errors, never an unblocked default.
+- Validation: offline request/response regression tests under
+  `sui::provider::tests`, `cargo check --offline -p wallet-chain-interact --lib`,
+  changed-file rustfmt check, and `git diff --check`.
+- Stop condition: conflict resolved and focused validation passes; continue
+  the pending local rebase without pushing. If dependencies prevent validation,
+  record the blocker before continuing the rebase.
+- Evidence: all five offline provider regression tests passed;
+  `cargo check --offline -p wallet-chain-interact --lib --tests`, changed-file
+  rustfmt check and `git diff --check` passed. Live RPC was not exercised.
+
 ## Active: Bound Base Additional-Fee Requests Before Local dev Merge (2026-09-30)
 
 Scope: `wallet-chain-interact` only. Preserve the current Base native/ERC-20
@@ -160,3 +189,33 @@ format check, and diff check passed. No live Avalanche RPC was queried.
 - Evidence: the focused offline `safe_preflight` suite passed 21 tests;
   `cargo check -p wallet-chain-interact --lib --tests --offline`, formatting,
   and `git diff --check` passed. No live Scroll RPC was queried.
+
+
+## Sui recharge scanner compatibility (2026-10-13)
+
+- Batch 1: only the Sui Provider read flow in `wallet-chain-interact`. Extend
+  checkpoint results with transaction digests and queried transactions with gas
+  owner and typed balance changes. Update read masks and validate required fields
+  at the gRPC mapping boundary. Add offline request/mapping/batch regressions.
+  Validate `cargo test -p wallet-chain-interact --lib sui::provider::tests --offline`
+  and focused formatting/diff checks. Stop before editing the plugin until this
+  batch passes; preserve the existing uncommitted deny-list changes.
+- Batch 2: only `plugin-sui` in the recharge plugins workspace. Switch scans and
+  transaction details back to the enriched Provider DTOs; remove the temporary
+  reader and its direct gRPC dependencies. Preserve transfer/fee behavior and
+  existing config edits. Validate `cargo check -p plugin-sui --offline` and
+  `cargo test -p plugin-sui --lib --offline`. Stop after offline verification;
+  no live RPC, transaction submission, commit, or push.
+
+
+## Sui zero-price transaction reads (2026-10-16)
+
+- Scope: `wallet-chain-interact` Sui transaction mapping and query-result fee
+  extraction only. Accept explicit zero gas prices from executed transactions;
+  preserve missing-field and i64 overflow checks. Preserve balance changes and
+  fees from effects, and report zero price-derived gas units when price is zero.
+- Add offline single/batch mapping and fee-extraction regressions. Validate
+  `cargo test -p wallet-chain-interact --lib sui:: --offline` using the plugins
+  workspace target, then `cargo test -p plugin-sui --lib --offline`.
+- Stop after focused validation and read-only local endpoint checks; no commit,
+  push, transaction submission, or restart of the user's running process.
